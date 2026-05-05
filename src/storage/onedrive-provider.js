@@ -8,10 +8,9 @@ const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 const AUTH_ENDPOINT = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
 const TOKEN_ENDPOINT = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
 
-// OAuth2 configuration
-// TODO: Register app in Azure Portal and update CLIENT_ID
-// Instructions in StoragePicker component
-const CLIENT_ID = 'TODO_REPLACE_WITH_AZURE_APP_ID'
+// Azure app registration (registered 2026-05-05)
+// App: Food Tracker | Tenant: All Microsoft accounts (personal + org)
+const CLIENT_ID = '94f25f67-e08b-415e-b1aa-4159093d401d'
 const SCOPES = 'Files.ReadWrite offline_access'
 const FOLDER_PATH = '/food-tracker'
 
