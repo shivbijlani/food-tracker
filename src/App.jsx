@@ -694,11 +694,72 @@ function SettingsView({ folderName, storageProvider, onSwitchMode }) {
               </ol>
               Rate limits: ~150 low-tier requests/day (more than enough for food logging).
             </div>
-          ) : (
-            <span className="muted" style={{fontSize:'0.8rem'}}>
-              Get a key at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a>
-            </span>
-          )}
+          ) : provider === 'openai' ? (
+            <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
+              <strong>Pay-as-you-go.</strong> To get your API key:
+              <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
+                <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com/api-keys</a></li>
+                <li>Click <strong>Create new secret key</strong></li>
+                <li>Give it a name (e.g. <em>food-tracker</em>) and click <strong>Create secret key</strong></li>
+                <li>Copy the key (starts with <code>sk-</code>) — it won't be shown again</li>
+                <li>Paste it above and click <strong>Save</strong></li>
+              </ol>
+              Cost is minimal: gpt-4o-mini costs ~$0.00015 per nutrition estimate.
+              Your key is stored only in your browser — never sent to any server other than OpenAI.
+              <div style={{marginTop: '0.4rem'}}>
+                <button
+                  className="btn btn-secondary"
+                  style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText()
+                      if (text.startsWith('sk-')) {
+                        setApiKeyState(text.trim())
+                      } else {
+                        alert('Clipboard does not contain an OpenAI key (should start with sk-)')
+                      }
+                    } catch {
+                      alert('Could not read clipboard. Paste the key manually.')
+                    }
+                  }}
+                >
+                  📋 Paste from clipboard
+                </button>
+              </div>
+            </div>
+          ) : provider === 'claude' ? (
+            <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
+              <strong>Pay-as-you-go.</strong> To get your API key:
+              <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
+                <li>Go to <a href="https://console.anthropic.com/settings/api-keys" target="_blank" rel="noreferrer">console.anthropic.com/settings/api-keys</a></li>
+                <li>Click <strong>Create Key</strong></li>
+                <li>Give it a name (e.g. <em>food-tracker</em>) and copy the key (starts with <code>sk-ant-</code>)</li>
+                <li>Paste it above and click <strong>Save</strong></li>
+              </ol>
+              Cost is minimal: Claude Haiku costs ~$0.0001 per nutrition estimate.
+              Your key is stored only in your browser — never sent to any server other than Anthropic.
+              <div style={{marginTop: '0.4rem'}}>
+                <button
+                  className="btn btn-secondary"
+                  style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText()
+                      if (text.startsWith('sk-ant-')) {
+                        setApiKeyState(text.trim())
+                      } else {
+                        alert('Clipboard does not contain an Anthropic key (should start with sk-ant-)')
+                      }
+                    } catch {
+                      alert('Could not read clipboard. Paste the key manually.')
+                    }
+                  }}
+                >
+                  📋 Paste from clipboard
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="field">
           <label>Model</label>
