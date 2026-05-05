@@ -8,7 +8,6 @@ import { LocalStorageProvider } from './storage/localstorage-provider.js'
 import { migrate, resumePendingMigration, hasPendingMigration, makeProvider } from './storage/migrate.js'
 import * as llm from './llm.js'
 import SimpleMode from './SimpleMode.jsx'
-import { SettingsButton } from './SettingsButton.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
