@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { storage, getProvider, PROVIDERS } from './storage/storage.js'
+import { storage, getProvider, setProvider, PROVIDERS, getProviderName, getAvailableProviders } from './storage/storage.js'
 import {
   parseTable, rowsToObjects, objectsToRows, replaceFirstTable,
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
 } from './storage/markdown.js'
+import { LocalStorageProvider } from './storage/localstorage-provider.js'
+import { migrate, resumePendingMigration, hasPendingMigration, makeProvider } from './storage/migrate.js'
 import * as llm from './llm.js'
 import SimpleMode, { ModePill } from './SimpleMode.jsx'
-import { StoragePicker } from './components/StoragePicker.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -74,14 +75,43 @@ export default function App() {
     }
   }
 
-  // Try to restore storage on load
+  // Initialize storage on load — default to localStorage, or restore saved provider
   useEffect(() => {
-    const savedProvider = localStorage.getItem('storage-provider')
-    if (savedProvider) {
-      // StoragePicker will handle restoration
-    } else {
-      setLoading(false)
-    }
+    (async () => {
+      try {
+        // 1. If returning from OAuth redirect with a pending migration, finish it
+        if (hasPendingMigration()) {
+          const migratedTo = await resumePendingMigration()
+          if (migratedTo) {
+            await handleStorageReady(migratedTo)
+            setLoading(false)
+            return
+          }
+        }
+
+        // 2. Look for saved provider
+        const savedId = localStorage.getItem('storage-provider') || PROVIDERS.LOCAL_STORAGE
+        const provider = makeProvider(savedId)
+        const ok = await provider.init()
+        if (ok && await provider.isReady()) {
+          setProvider(provider)
+          localStorage.setItem('storage-provider', savedId)
+          await handleStorageReady(savedId)
+        } else if (savedId !== PROVIDERS.LOCAL_STORAGE) {
+          // Cloud auth failed — fall back to localStorage so user isn't locked out
+          const fallback = new LocalStorageProvider()
+          await fallback.init()
+          setProvider(fallback)
+          localStorage.setItem('storage-provider', PROVIDERS.LOCAL_STORAGE)
+          await handleStorageReady(PROVIDERS.LOCAL_STORAGE)
+          setError(`Could not restore ${getProviderName(savedId)}. Using browser storage.`)
+        }
+      } catch (e) {
+        setError(`Storage init failed: ${e.message}`)
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [])
 
   const loadAll = useCallback(async () => {
@@ -134,9 +164,8 @@ export default function App() {
 
   if (loading) return <div className="app"><div className="empty">Loading…</div></div>
 
-  // Show storage picker if no storage is configured
   if (!storageReady) {
-    return <StoragePicker onStorageReady={handleStorageReady} />
+    return <div className="app"><div className="empty">Initializing storage…</div></div>
   }
 
   if (mode === 'simple') {
@@ -506,6 +535,101 @@ function GoalsView({ goals }) {
   )
 }
 
+function MigrateStorageCard({ storageProvider, folderName }) {
+  const [confirming, setConfirming] = useState(null) // target id awaiting confirm
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [keepSource, setKeepSource] = useState(true)
+  const all = getAvailableProviders()
+  const others = all.filter(id => id !== storageProvider)
+
+  const startMigrate = async (toId) => {
+    setError('')
+    setBusy(true)
+    try {
+      const result = await migrate(getProvider(), toId, {
+        deleteSource: !keepSource,
+        fromId: storageProvider,
+      })
+      if (result.ok) {
+        window.location.reload()
+        return
+      }
+      if (result.redirected) {
+        // Page is about to redirect for OAuth — leave busy spinner up
+        return
+      }
+      setError(result.error || 'Migration failed')
+    } catch (e) {
+      setError(e.message || 'Migration failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>Storage</h2>
+      <p className="muted">
+        Currently using: <strong>{getProviderName(storageProvider)}</strong> ({folderName})
+      </p>
+
+      {!confirming && (
+        <>
+          <p className="muted" style={{ marginTop: '0.75rem' }}>
+            Migrate your data to a different storage backend. All your files will be copied.
+          </p>
+          <div className="storage-migrate-options">
+            {others.map(id => (
+              <button
+                key={id}
+                className="btn btn-secondary"
+                onClick={() => setConfirming(id)}
+                disabled={busy}
+              >
+                Migrate to {getProviderName(id)} →
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {confirming && (
+        <div className="banner info" style={{ marginTop: '0.75rem' }}>
+          <p>
+            <strong>Migrate to {getProviderName(confirming)}?</strong> All your tracking data
+            will be copied from {getProviderName(storageProvider)} to {getProviderName(confirming)}.
+          </p>
+          {storageProvider === PROVIDERS.LOCAL_STORAGE && (
+            <label style={{ display: 'block', margin: '0.5rem 0' }}>
+              <input
+                type="checkbox"
+                checked={!keepSource}
+                onChange={e => setKeepSource(!e.target.checked)}
+              />{' '}
+              Delete browser storage copy after successful migration
+            </label>
+          )}
+          {(confirming === PROVIDERS.ONEDRIVE || confirming === PROVIDERS.GOOGLE_DRIVE) && (
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              You will be redirected to sign in. Your data will be copied automatically when you return.
+            </p>
+          )}
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <button className="btn" onClick={() => startMigrate(confirming)} disabled={busy}>
+              {busy ? 'Migrating…' : 'Yes, migrate'}
+            </button>
+            <button className="btn btn-secondary" onClick={() => setConfirming(null)} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+          {error && <div className="banner error" style={{ marginTop: '0.5rem' }}>{error}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SettingsView({ folderName, storageProvider, onSwitchMode }) {
   const [provider, setProviderState] = useState(llm.getProvider())
   const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(llm.getProvider()))
@@ -532,18 +656,10 @@ function SettingsView({ folderName, storageProvider, onSwitchMode }) {
   }
 
   const providerInfo = llm.PROVIDERS[provider]
-  const storageLabel = storageProvider === 'onedrive' ? 'OneDrive' 
-    : storageProvider === 'fsa' ? 'Local Folder' 
-    : storageProvider === 'google-drive' ? 'Google Drive'
-    : 'Unknown'
 
   return (
     <>
-      <div className="card">
-        <h2>Storage</h2>
-        <p className="muted">Currently using: <strong>{storageLabel}</strong> ({folderName})</p>
-        <button className="btn btn-secondary" onClick={handleChangeStorage}>Change storage provider…</button>
-      </div>
+      <MigrateStorageCard storageProvider={storageProvider} folderName={folderName} />
 
       <div className="card">
         <h2>LLM for Nutrition Estimation</h2>

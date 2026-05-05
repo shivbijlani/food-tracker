@@ -7,6 +7,7 @@
 
 // Storage provider types
 export const PROVIDERS = {
+  LOCAL_STORAGE: 'local-storage',
   FSA: 'fsa',
   ONEDRIVE: 'onedrive',
   GOOGLE_DRIVE: 'google-drive'
@@ -14,7 +15,7 @@ export const PROVIDERS = {
 
 // Detect available providers
 export function getAvailableProviders() {
-  const providers = []
+  const providers = [PROVIDERS.LOCAL_STORAGE]
   
   // FSA only available in secure contexts on Chromium browsers
   if (window.showDirectoryPicker && window.isSecureContext) {
@@ -30,6 +31,7 @@ export function getAvailableProviders() {
 // Get friendly names for providers
 export function getProviderName(provider) {
   switch (provider) {
+    case PROVIDERS.LOCAL_STORAGE: return 'Browser Storage'
     case PROVIDERS.FSA: return 'Local Folder'
     case PROVIDERS.ONEDRIVE: return 'OneDrive'
     case PROVIDERS.GOOGLE_DRIVE: return 'Google Drive'
