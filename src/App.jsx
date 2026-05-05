@@ -556,7 +556,10 @@ function SettingsView({ onChangeFolder, folderName }) {
             autoComplete="off"
           />
           <span className="muted" style={{fontSize:'0.8rem'}}>
-            Get a key at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a>
+            {provider === 'github'
+              ? <>Create a fine-grained PAT with <code>models:read</code> permission at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a>. Free tier has daily rate limits but no cost.</>
+              : <>Get a key at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a></>
+            }
           </span>
         </div>
         <div className="field">

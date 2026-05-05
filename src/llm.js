@@ -6,35 +6,47 @@ const KEY_STORAGE = 'food-tracker-openai-key'
 const MODEL_STORAGE = 'food-tracker-openai-model'
 const CLAUDE_KEY_STORAGE = 'food-tracker-claude-key'
 const CLAUDE_MODEL_STORAGE = 'food-tracker-claude-model'
+const GITHUB_KEY_STORAGE = 'food-tracker-github-key'
+const GITHUB_MODEL_STORAGE = 'food-tracker-github-model'
 
 export const PROVIDERS = {
+  github: { label: 'GitHub Models (free)', defaultModel: 'openai/gpt-4o-mini', keyPlaceholder: 'github_pat_… or ghp_…', keyUrl: 'https://github.com/settings/tokens' },
   openai: { label: 'OpenAI', defaultModel: 'gpt-4o-mini', keyPlaceholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
   claude: { label: 'Anthropic Claude', defaultModel: 'claude-haiku-4-5', keyPlaceholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/api-keys' },
 }
 
 export function getProvider() {
-  return localStorage.getItem(PROVIDER_STORAGE) || 'openai'
+  return localStorage.getItem(PROVIDER_STORAGE) || 'github'
 }
 export function setProvider(p) {
   if (p) localStorage.setItem(PROVIDER_STORAGE, p)
 }
 
+function keyStorageFor(provider) {
+  if (provider === 'claude') return CLAUDE_KEY_STORAGE
+  if (provider === 'github') return GITHUB_KEY_STORAGE
+  return KEY_STORAGE
+}
+function modelStorageFor(provider) {
+  if (provider === 'claude') return CLAUDE_MODEL_STORAGE
+  if (provider === 'github') return GITHUB_MODEL_STORAGE
+  return MODEL_STORAGE
+}
+
 export function getApiKey(provider = getProvider()) {
-  const k = provider === 'claude' ? CLAUDE_KEY_STORAGE : KEY_STORAGE
-  return localStorage.getItem(k) || ''
+  return localStorage.getItem(keyStorageFor(provider)) || ''
 }
 export function setApiKey(key, provider = getProvider()) {
-  const k = provider === 'claude' ? CLAUDE_KEY_STORAGE : KEY_STORAGE
+  const k = keyStorageFor(provider)
   if (key) localStorage.setItem(k, key)
   else localStorage.removeItem(k)
 }
 
 export function getModel(provider = getProvider()) {
-  const k = provider === 'claude' ? CLAUDE_MODEL_STORAGE : MODEL_STORAGE
-  return localStorage.getItem(k) || PROVIDERS[provider]?.defaultModel || 'gpt-4o-mini'
+  return localStorage.getItem(modelStorageFor(provider)) || PROVIDERS[provider]?.defaultModel || 'gpt-4o-mini'
 }
 export function setModel(model, provider = getProvider()) {
-  const k = provider === 'claude' ? CLAUDE_MODEL_STORAGE : MODEL_STORAGE
+  const k = modelStorageFor(provider)
   if (model) localStorage.setItem(k, model)
   else localStorage.removeItem(k)
 }
@@ -86,6 +98,23 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
       }),
       signal,
     })
+  } else if (provider === 'github') {
+    res = await fetch('https://models.github.ai/inference/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemContent + '\n\nReturn only valid JSON, no markdown.' },
+          { role: 'user', content: foodDescription },
+        ],
+        temperature: 0.2,
+      }),
+      signal,
+    })
   } else {
     res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -117,6 +146,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   if (provider === 'claude') {
     content = data.content?.[0]?.text
   } else {
+    // openai + github both use chat completions response shape
     content = data.choices?.[0]?.message?.content
   }
   if (!content) throw new Error('No response from model')
