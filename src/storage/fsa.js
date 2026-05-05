@@ -104,3 +104,34 @@ export async function scaffoldIfEmpty(dirHandle) {
     await writeFile(dirHandle, 'recipes.md', SCAFFOLD_RECIPES)
   }
 }
+
+
+const SCAFFOLD_PROTEIN_LOG = `# Protein Log
+
+| Date | Meal | Protein (g) |
+|------|------|-------------|
+`
+
+const SCAFFOLD_SYSTEMS = `# Systems
+
+Add your success and failure systems here.
+`
+
+const SCAFFOLD_GOALS_SIMPLE = `# Daily Nutrition Goals
+
+| Nutrient | Target | Notes |
+|----------|--------|-------|
+| Protein | 100 g | Daily protein goal |
+`
+
+export async function scaffoldSimpleModeIfEmpty(dirHandle) {
+  if (!(await fileExists(dirHandle, 'protein-log.md'))) {
+    await writeFile(dirHandle, 'protein-log.md', SCAFFOLD_PROTEIN_LOG)
+  }
+  if (!(await fileExists(dirHandle, 'systems.md'))) {
+    await writeFile(dirHandle, 'systems.md', SCAFFOLD_SYSTEMS)
+  }
+  if (!(await fileExists(dirHandle, 'goals.md'))) {
+    await writeFile(dirHandle, 'goals.md', SCAFFOLD_GOALS_SIMPLE)
+  }
+}

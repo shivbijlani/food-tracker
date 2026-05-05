@@ -5,6 +5,7 @@ import {
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
 } from './storage/markdown.js'
 import * as llm from './llm.js'
+import SimpleMode, { ModePill } from './SimpleMode.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -53,6 +54,12 @@ export default function App() {
   const [recipes, setRecipes] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [mode, setModeState] = useState(() => localStorage.getItem('food-tracker-mode') || 'advanced')
+
+  const switchMode = (m) => {
+    localStorage.setItem('food-tracker-mode', m)
+    setModeState(m)
+  }
 
   const supported = fsa.isSupported()
 
@@ -145,11 +152,18 @@ export default function App() {
     )
   }
 
+  if (mode === 'simple') {
+    return <SimpleMode handle={handle} folderName={folderName} onPickFolder={pickFolder} mode={mode} setMode={switchMode} />
+  }
+
   return (
     <div className="app">
       <header className="app-header">
         <h1 className="app-title">🥗 Food Tracker</h1>
-        <span className="folder-pill" title="Storage folder">📁 {folderName}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="folder-pill" title="Storage folder">📁 {folderName}</span>
+          <ModePill mode={mode} setMode={switchMode} />
+        </div>
       </header>
 
       <nav className="tabs">
@@ -170,7 +184,7 @@ export default function App() {
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
-      {tab === 'settings' && <SettingsView onChangeFolder={pickFolder} folderName={folderName} />}
+      {tab === 'settings' && <SettingsView onChangeFolder={pickFolder} folderName={folderName} onSwitchMode={() => switchMode('simple')} />}
     </div>
   )
 }
@@ -503,7 +517,7 @@ function GoalsView({ goals }) {
   )
 }
 
-function SettingsView({ onChangeFolder, folderName }) {
+function SettingsView({ onChangeFolder, folderName, onSwitchMode }) {
   const [provider, setProviderState] = useState(llm.getProvider())
   const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(llm.getProvider()))
   const [model, setModelState] = useState(() => llm.getModel(llm.getProvider()))
@@ -595,6 +609,12 @@ function SettingsView({ onChangeFolder, folderName }) {
           <li><code>recipes.md</code> — homemade items with known per-serving nutrition</li>
         </ul>
         <p className="muted">Edit them in any text editor; the app will pick up changes.</p>
+      </div>
+
+      <div className="card">
+        <h2>App Mode</h2>
+        <p className="muted">Switch to Simple Mode for protein-only tracking with a streamlined interface.</p>
+        <button className="btn btn-secondary" onClick={onSwitchMode}>Switch to Simple Mode</button>
       </div>
     </>
   )

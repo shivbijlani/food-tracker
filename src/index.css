@@ -318,3 +318,77 @@ table.simple th {
   border-radius: 4px;
 }
 .icon-btn:hover { background: var(--bg); color: var(--bad); }
+
+/* ── Simple Mode ──────────────────────────────── */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.collapse-arrow {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.systems-content {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 500px;
+  overflow-y: auto;
+}
+.week-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.week-header:hover { background: var(--bg); border-radius: 6px; padding-left: 4px; }
+.week-header .collapse-arrow { margin-left: auto; }
+.entry-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.entry-row:last-child { border-bottom: none; }
+.entry-row-date { color: var(--text-muted); min-width: 90px; font-size: 12px; }
+.entry-row-meal { flex: 1; }
+.entry-row-protein { min-width: 50px; text-align: right; color: var(--accent); }
+.plan-bar { border-radius: 6px; }
+.plan-bar-fill { border-radius: 6px 0 0 6px; }
+.plan-bar-planned {}
+.plan-bar-time {}
+.plan-bar-goal {}
+/* Mode switcher pill */
+.mode-pill {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.mode-pill-btn {
+  background: transparent;
+  border: none;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 999px;
+}
+.mode-pill-btn.active {
+  background: var(--accent);
+  color: #fff;
+}

@@ -75,3 +75,5 @@ export const DAILY_LOG_HEADERS = [
 export const GOALS_HEADERS = ['Nutrient', 'Target', 'Notes']
 
 export const RECIPE_HEADERS = ['Recipe', 'Servings', 'Calories', 'Protein (g)', 'Calcium (mg)', 'Notes']
+
+export const PROTEIN_LOG_HEADERS = ['Date', 'Meal', 'Protein (g)']
