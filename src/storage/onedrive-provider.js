@@ -39,6 +39,16 @@ export class OneDriveProvider extends StorageProvider {
     if (this.isTokenValid()) {
       return true
     }
+
+    // Try to refresh silently before falling back to full re-auth
+    if (this.refreshToken) {
+      try {
+        await this.ensureValidToken()
+        if (this.isTokenValid()) return true
+      } catch (e) {
+        // refresh failed — fall through to full re-auth
+      }
+    }
     
     // Check for OAuth2 callback
     const urlParams = new URLSearchParams(window.location.search)
