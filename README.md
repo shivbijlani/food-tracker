@@ -1,15 +1,33 @@
 # Food Tracker
 
-A local-first food & nutrition tracker. Inspired by the [focus-planner](https://github.com/shivbijlani/focus-planner) architecture: your data lives in a folder you pick, as plain markdown files — not in a database, not on a server.
+A local-first food & nutrition tracker with mobile support. Inspired by the [focus-planner](https://github.com/shivbijlani/focus-planner) architecture: your data lives as plain markdown files — not in a database, not on a server.
 
 ## Features
 
+- **Two Modes**: Simple (protein-only tracking with progress bars) or Advanced (full nutrition tracking)
 - **Today** — at-a-glance progress vs. your daily goals (calories, protein, calcium, veg servings, omega-3).
 - **Add entry** — type what you ate; optionally let an LLM estimate the nutrition values, edit, and save.
 - **Log** — full daily history grouped by day with per-day totals.
-- **Recipes** — saved per-serving nutrition for things you eat often. Recipes are passed as context to the LLM so "two servings of [recipe]" estimates accurately.
+- **Recipes** — saved per-serving nutrition for things you eat often.
 - **Goals** — edit your daily targets.
-- **Settings** — pick a folder, set your OpenAI API key & model.
+- **Mobile Support** — OneDrive sync enables access from any device
+- **LLM Integration** — GitHub Models (free), OpenAI, or Claude for nutrition estimation
+
+## Storage Options
+
+### 🖥️ Local Folder (Desktop Only)
+- **How**: Uses [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_Access_API)
+- **Where**: Files stored in a folder you choose on your computer
+- **Pros**: Complete privacy, works offline, you own the files
+- **Cons**: Desktop Chrome/Edge only, no mobile access
+
+### 📱 OneDrive (Mobile + Desktop)
+- **How**: Files stored in your OneDrive (`/food-tracker/` folder)
+- **Where**: Synced across all your devices
+- **Pros**: Works on mobile, automatic backup, cross-device sync
+- **Cons**: Requires Azure app registration (one-time setup)
+
+**Mobile Setup**: See [MOBILE_SETUP.md](MOBILE_SETUP.md) for OneDrive configuration instructions.
 
 ## Architecture
 
