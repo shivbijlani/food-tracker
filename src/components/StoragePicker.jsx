@@ -18,12 +18,20 @@ export function StoragePicker({ onStorageReady }) {
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState('')
 
-  // Check if we have existing storage on mount
+  // Check if we have existing storage on mount, or returning from OAuth callback
   useEffect(() => {
     const savedProvider = localStorage.getItem('storage-provider')
+    const urlParams = new URLSearchParams(window.location.search)
+    const hasOAuthCode = urlParams.get('code') && urlParams.get('state')
+    
     if (savedProvider && availableProviders.includes(savedProvider)) {
       setSelectedProvider(savedProvider)
       tryConnectProvider(savedProvider, true)
+    } else if (hasOAuthCode && localStorage.getItem('onedrive_code_verifier')) {
+      // Returning from OneDrive OAuth redirect - save provider and complete auth
+      localStorage.setItem('storage-provider', PROVIDERS.ONEDRIVE)
+      setSelectedProvider(PROVIDERS.ONEDRIVE)
+      tryConnectProvider(PROVIDERS.ONEDRIVE, true)
     }
   }, [availableProviders])
 
@@ -45,6 +53,11 @@ export function StoragePicker({ onStorageReady }) {
           break
         default:
           throw new Error('Unknown provider')
+      }
+
+      // Save provider before init() in case it redirects for OAuth
+      if (!isReconnect) {
+        localStorage.setItem('storage-provider', providerId)
       }
 
       const success = await provider.init()
