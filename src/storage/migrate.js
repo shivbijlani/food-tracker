@@ -12,12 +12,12 @@ import { GoogleDriveProvider } from './google-drive-provider.js'
 
 const MIGRATION_KEY = 'pending-migration'
 
-export function makeProvider(id) {
+export function makeProvider(id, opts = {}) {
   switch (id) {
     case PROVIDERS.LOCAL_STORAGE: return new LocalStorageProvider()
     case PROVIDERS.FSA: return new FSAProvider()
-    case PROVIDERS.ONEDRIVE: return new OneDriveProvider()
-    case PROVIDERS.GOOGLE_DRIVE: return new GoogleDriveProvider()
+    case PROVIDERS.ONEDRIVE: return new OneDriveProvider(opts.folderName || null)
+    case PROVIDERS.GOOGLE_DRIVE: return new GoogleDriveProvider(opts.folderName || null)
     default: throw new Error(`Unknown provider: ${id}`)
   }
 }
@@ -75,6 +75,7 @@ export async function migrate(fromProvider, toId, opts = {}) {
       payload,
       deleteSource: !!opts.deleteSource,
       fromId: opts.fromId || null,
+      folderName: opts.folderName || null,
     }))
     // init() may redirect away — that's fine, we'll resume on return
     const ok = await target.init()
@@ -112,7 +113,7 @@ export async function resumePendingMigration() {
   const pending = readPendingMigration()
   if (!pending) return null
 
-  const target = makeProvider(pending.toId)
+  const target = makeProvider(pending.toId, { folderName: pending.folderName || null })
   const ok = await target.init()
   if (!ok || !(await target.isReady())) {
     return null // OAuth might still be pending or failed

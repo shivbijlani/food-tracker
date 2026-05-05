@@ -12,14 +12,24 @@ const TOKEN_ENDPOINT = 'https://login.microsoftonline.com/common/oauth2/v2.0/tok
 // App: Food Tracker | Tenant: All Microsoft accounts (personal + org)
 const CLIENT_ID = '94f25f67-e08b-415e-b1aa-4159093d401d'
 const SCOPES = 'Files.ReadWrite offline_access'
-const FOLDER_PATH = '/food-tracker'
+const DEFAULT_FOLDER = 'food-tracker'
+const FOLDER_KEY = 'ft_od_folder'
 
 export class OneDriveProvider extends StorageProvider {
-  constructor() {
+  constructor(folderName = null) {
     super()
     this.accessToken = null
     this.refreshToken = null
     this.expiresAt = null
+    this._folder = folderName || localStorage.getItem(FOLDER_KEY) || DEFAULT_FOLDER
+    if (folderName) localStorage.setItem(FOLDER_KEY, folderName)
+  }
+
+  get folderPath() { return `/${this._folder}` }
+
+  setFolder(name) {
+    this._folder = name
+    localStorage.setItem(FOLDER_KEY, name)
   }
   
   async init() {
@@ -61,13 +71,13 @@ export class OneDriveProvider extends StorageProvider {
   }
   
   async getFolderName() {
-    return 'OneDrive/food-tracker'
+    return `OneDrive/${this._folder}`
   }
   
   async readFile(filename) {
     await this.ensureValidToken()
     
-    const path = `${FOLDER_PATH}/${filename}`
+    const path = `${this.folderPath}/${filename}`
     const url = `${GRAPH_BASE}/me/drive/root:${path}:/content`
     
     try {
@@ -98,7 +108,7 @@ export class OneDriveProvider extends StorageProvider {
     await this.ensureValidToken()
     await this.ensureFolderExists()
     
-    const path = `${FOLDER_PATH}/${filename}`
+    const path = `${this.folderPath}/${filename}`
     const url = `${GRAPH_BASE}/me/drive/root:${path}:/content`
     
     const response = await fetch(url, {
@@ -118,7 +128,7 @@ export class OneDriveProvider extends StorageProvider {
   async deleteFile(filename) {
     await this.ensureValidToken()
     
-    const path = `${FOLDER_PATH}/${filename}`
+    const path = `${this.folderPath}/${filename}`
     const url = `${GRAPH_BASE}/me/drive/root:${path}`
     
     try {
@@ -140,7 +150,7 @@ export class OneDriveProvider extends StorageProvider {
   async listFiles() {
     await this.ensureValidToken()
     
-    const path = FOLDER_PATH
+    const path = this.folderPath
     const url = `${GRAPH_BASE}/me/drive/root:${path}:/children`
     
     try {
@@ -302,7 +312,7 @@ export class OneDriveProvider extends StorageProvider {
   }
   
   async ensureFolderExists() {
-    const url = `${GRAPH_BASE}/me/drive/root:${FOLDER_PATH}`
+    const url = `${GRAPH_BASE}/me/drive/root:${this.folderPath}`
     
     try {
       const response = await fetch(url, {
@@ -325,7 +335,7 @@ export class OneDriveProvider extends StorageProvider {
     const url = `${GRAPH_BASE}/me/drive/root/children`
     
     const body = JSON.stringify({
-      name: 'food-tracker',
+      name: this._folder,
       folder: {},
       '@microsoft.graph.conflictBehavior': 'rename'
     })

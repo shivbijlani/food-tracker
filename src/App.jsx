@@ -540,8 +540,18 @@ function MigrateStorageCard({ storageProvider, folderName }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [keepSource, setKeepSource] = useState(true)
+  const [customFolder, setCustomFolder] = useState('food-tracker')
   const all = getAvailableProviders()
   const others = all.filter(id => id !== storageProvider)
+  const isCloud = (id) => id === PROVIDERS.ONEDRIVE || id === PROVIDERS.GOOGLE_DRIVE
+
+  const handleConfirming = (id) => {
+    setConfirming(id)
+    const existing = id === PROVIDERS.ONEDRIVE
+      ? (localStorage.getItem('ft_od_folder') || 'food-tracker')
+      : 'food-tracker'
+    setCustomFolder(existing)
+  }
 
   const startMigrate = async (toId) => {
     setError('')
@@ -550,6 +560,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
       const result = await migrate(getProvider(), toId, {
         deleteSource: !keepSource,
         fromId: storageProvider,
+        folderName: isCloud(toId) ? (customFolder.trim() || 'food-tracker') : undefined,
       })
       if (result.ok) {
         window.location.reload()
@@ -584,7 +595,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
               <button
                 key={id}
                 className="btn btn-secondary"
-                onClick={() => setConfirming(id)}
+                onClick={() => handleConfirming(id)}
                 disabled={busy}
               >
                 Migrate to {getProviderName(id)} →
@@ -600,6 +611,25 @@ function MigrateStorageCard({ storageProvider, folderName }) {
             <strong>Migrate to {getProviderName(confirming)}?</strong> All your tracking data
             will be copied from {getProviderName(storageProvider)} to {getProviderName(confirming)}.
           </p>
+          {isCloud(confirming) && (
+            <div style={{ margin: '0.5rem 0' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px' }}>
+                Folder name in {getProviderName(confirming)}
+              </label>
+              <input
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: '#1e293b', border: '1px solid #334155',
+                  color: '#e2e8f0', borderRadius: '4px', padding: '5px 8px',
+                  fontSize: '0.875rem'
+                }}
+                value={customFolder}
+                onChange={e => setCustomFolder(e.target.value)}
+                placeholder="food-tracker"
+                disabled={busy}
+              />
+            </div>
+          )}
           {storageProvider === PROVIDERS.LOCAL_STORAGE && (
             <label style={{ display: 'block', margin: '0.5rem 0' }}>
               <input
@@ -610,7 +640,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
               Delete browser storage copy after successful migration
             </label>
           )}
-          {(confirming === PROVIDERS.ONEDRIVE || confirming === PROVIDERS.GOOGLE_DRIVE) && (
+          {isCloud(confirming) && (
             <p className="muted" style={{ fontSize: '0.85rem' }}>
               You will be redirected to sign in. Your data will be copied automatically when you return.
             </p>

@@ -11,15 +11,23 @@ const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 // OAuth2 configuration - these will need to be registered in Google Cloud Console
 const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID' // Will be updated after app registration
 const SCOPES = 'https://www.googleapis.com/auth/drive.file'
-const FOLDER_NAME = 'food-tracker'
+const DEFAULT_FOLDER = 'food-tracker'
+const FOLDER_KEY = 'ft_gd_folder'
 
 export class GoogleDriveProvider extends StorageProvider {
-  constructor() {
+  constructor(folderName = null) {
     super()
     this.accessToken = null
     this.refreshToken = null
     this.expiresAt = null
     this.folderId = null
+    this._folder = folderName || localStorage.getItem(FOLDER_KEY) || DEFAULT_FOLDER
+    if (folderName) localStorage.setItem(FOLDER_KEY, folderName)
+  }
+
+  setFolder(name) {
+    this._folder = name
+    localStorage.setItem(FOLDER_KEY, name)
   }
   
   async init() {
@@ -33,7 +41,7 @@ export class GoogleDriveProvider extends StorageProvider {
   }
   
   async getFolderName() {
-    return 'Google Drive/food-tracker'
+    return `Google Drive/${this._folder}`
   }
   
   async readFile(filename) {
