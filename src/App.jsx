@@ -555,12 +555,22 @@ function SettingsView({ onChangeFolder, folderName }) {
             onChange={e => setApiKeyState(e.target.value)}
             autoComplete="off"
           />
-          <span className="muted" style={{fontSize:'0.8rem'}}>
-            {provider === 'github'
-              ? <>Create a fine-grained PAT with <code>models:read</code> permission at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a>. Free tier has daily rate limits but no cost.</>
-              : <>Get a key at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a></>
-            }
-          </span>
+          {provider === 'github' ? (
+            <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
+              <strong>Free — no billing required.</strong> To get your token:
+              <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
+                <li>Go to <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a></li>
+                <li>Give it any name (e.g. <em>food-tracker</em>)</li>
+                <li>Under <strong>Account permissions</strong> → <strong>Models</strong> → set to <strong>Read-only</strong></li>
+                <li>Click <strong>Generate token</strong>, copy it, paste above</li>
+              </ol>
+              Rate limits: ~150 low-tier requests/day (more than enough for food logging).
+            </div>
+          ) : (
+            <span className="muted" style={{fontSize:'0.8rem'}}>
+              Get a key at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a>
+            </span>
+          )}
         </div>
         <div className="field">
           <label>Model</label>
