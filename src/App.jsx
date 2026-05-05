@@ -504,16 +504,26 @@ function GoalsView({ goals }) {
 }
 
 function SettingsView({ onChangeFolder, folderName }) {
-  const [apiKey, setApiKeyState] = useState(llm.getApiKey())
-  const [model, setModelState] = useState(llm.getModel())
+  const [provider, setProviderState] = useState(llm.getProvider())
+  const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(llm.getProvider()))
+  const [model, setModelState] = useState(() => llm.getModel(llm.getProvider()))
   const [saved, setSaved] = useState(false)
 
+  const handleProviderChange = (p) => {
+    setProviderState(p)
+    setApiKeyState(llm.getApiKey(p))
+    setModelState(llm.getModel(p))
+  }
+
   const saveSettings = () => {
-    llm.setApiKey(apiKey.trim())
-    llm.setModel(model.trim())
+    llm.setProvider(provider)
+    llm.setApiKey(apiKey.trim(), provider)
+    llm.setModel(model.trim(), provider)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
+
+  const providerInfo = llm.PROVIDERS[provider]
 
   return (
     <>
@@ -524,27 +534,37 @@ function SettingsView({ onChangeFolder, folderName }) {
       </div>
 
       <div className="card">
-        <h2>OpenAI API Key</h2>
+        <h2>LLM for Nutrition Estimation</h2>
         <p className="muted">
-          Used to estimate nutrition from food descriptions. Stored only in your browser's localStorage —
-          never sent anywhere except api.openai.com. Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com/api-keys</a>.
+          Used to estimate nutrition from food descriptions. Your API key is stored only in your browser's localStorage.
         </p>
+        <div className="field">
+          <label>Provider</label>
+          <select value={provider} onChange={e => handleProviderChange(e.target.value)}>
+            {Object.entries(llm.PROVIDERS).map(([key, p]) => (
+              <option key={key} value={key}>{p.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="field">
           <label>API key</label>
           <input
             type="password"
-            placeholder="sk-…"
+            placeholder={providerInfo.keyPlaceholder}
             value={apiKey}
             onChange={e => setApiKeyState(e.target.value)}
             autoComplete="off"
           />
+          <span className="muted" style={{fontSize:'0.8rem'}}>
+            Get a key at <a href={providerInfo.keyUrl} target="_blank" rel="noreferrer">{providerInfo.keyUrl}</a>
+          </span>
         </div>
         <div className="field">
           <label>Model</label>
           <input
             value={model}
             onChange={e => setModelState(e.target.value)}
-            placeholder="gpt-4o-mini"
+            placeholder={providerInfo.defaultModel}
           />
         </div>
         <div className="flex gap-8 items-center">
