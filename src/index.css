@@ -392,3 +392,333 @@ table.simple th {
   background: var(--accent);
   color: #fff;
 }
+
+/* ── Mobile Responsive ──────────────────────────── */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  .app {
+    padding: 12px 12px 80px;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .app-title {
+    font-size: 22px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .folder-pill {
+    align-self: flex-start;
+  }
+
+  .mode-pill {
+    align-self: flex-start;
+  }
+
+  .tabs {
+    margin-bottom: 16px;
+    gap: 2px;
+  }
+
+  .tab {
+    padding: 12px 8px;
+    font-size: 14px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .card {
+    padding: 16px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+  }
+
+  .card h2 {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+
+  /* Form fields touch-friendly */
+  .field input, .field textarea, .field select {
+    padding: 12px 14px;
+    font-size: 16px; /* Prevent zoom on iOS */
+    border-radius: 8px;
+  }
+
+  .btn {
+    padding: 12px 20px;
+    font-size: 15px;
+    border-radius: 8px;
+    min-height: 44px; /* Apple touch target */
+  }
+
+  /* Progress bars on mobile */
+  .progress-row {
+    grid-template-columns: 80px 1fr 70px;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .progress-bar {
+    height: 20px; /* Thicker on mobile */
+  }
+
+  /* Responsive row layouts */
+  .row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Entry styling for touch */
+  .entry {
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+
+  .entry-header {
+    font-size: 13px;
+  }
+
+  .entry-stats {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* Day sections more compact */
+  .day-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .day-totals {
+    font-size: 12px;
+  }
+
+  /* Table responsive */
+  table.simple {
+    font-size: 12px;
+  }
+
+  table.simple th, table.simple td {
+    padding: 6px 4px;
+  }
+
+  /* Simple mode mobile optimizations */
+  .week-header {
+    padding: 12px 8px;
+    flex-wrap: wrap;
+  }
+
+  .entry-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 10px 8px;
+  }
+
+  .entry-row-date {
+    min-width: auto;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .entry-row-protein {
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* Stacked layout for entry details */
+  .entry-row-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Preview card mobile */
+  .preview-card .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .preview-card .stat {
+    padding: 6px;
+  }
+
+  .preview-card .stat .v {
+    font-size: 14px;
+  }
+
+  /* Welcome screen */
+  .welcome {
+    padding: 40px 16px;
+  }
+
+  .welcome h1 {
+    font-size: 24px;
+  }
+
+  /* Collapsible headers touch-friendly */
+  .collapsible-header {
+    padding: 8px 0;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .systems-content {
+    padding: 12px;
+    font-size: 12px;
+    max-height: 300px;
+  }
+
+  /* Icon buttons touch-friendly */
+  .icon-btn {
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .app {
+    padding: 8px 8px 80px;
+  }
+
+  .app-title {
+    font-size: 20px;
+  }
+
+  .tab {
+    padding: 10px 6px;
+    font-size: 13px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .progress-row {
+    grid-template-columns: 70px 1fr 60px;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .progress-row .label {
+    font-size: 11px;
+  }
+
+  .preview-card .stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-stats {
+    font-size: 11px;
+  }
+}
+
+/* ── Storage Picker ──────────────────────────── */
+.storage-options {
+  display: grid;
+  gap: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.storage-option {
+  text-align: left;
+  position: relative;
+}
+
+.storage-option h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.storage-option .btn {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.storage-option:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+  transition: all 200ms;
+}
+
+.storage-option:has(.btn:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.storage-option:has(.btn:disabled):hover {
+  transform: none;
+  box-shadow: var(--shadow);
+}
+
+.setup-instructions {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.setup-instructions h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.setup-instructions ol {
+  padding-left: 16px;
+  margin: 8px 0;
+}
+
+.setup-instructions li {
+  margin-bottom: 4px;
+}
+
+.setup-instructions code {
+  background: #f1f5f9;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.setup-instructions a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.setup-instructions a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .storage-options {
+    gap: 12px;
+  }
+  
+  .setup-instructions {
+    font-size: 12px;
+  }
+  
+  .setup-instructions code {
+    font-size: 11px;
+  }
+}

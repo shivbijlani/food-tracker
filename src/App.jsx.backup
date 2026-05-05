@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { storage, getProvider, PROVIDERS } from './storage/storage.js'
+import * as fsa from './storage/fsa.js'
 import {
   parseTable, rowsToObjects, objectsToRows, replaceFirstTable,
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
 } from './storage/markdown.js'
 import * as llm from './llm.js'
 import SimpleMode, { ModePill } from './SimpleMode.jsx'
-import { StoragePicker } from './components/StoragePicker.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -47,8 +46,7 @@ function progressClass(actual, goal) {
 }
 
 export default function App() {
-  const [storageReady, setStorageReady] = useState(false)
-  const [storageProvider, setStorageProvider] = useState('')
+  const [handle, setHandle] = useState(null)
   const [folderName, setFolderName] = useState('')
   const [tab, setTab] = useState('today')
   const [logEntries, setLogEntries] = useState([])
@@ -63,35 +61,28 @@ export default function App() {
     setModeState(m)
   }
 
-  const handleStorageReady = async (providerId) => {
-    setStorageProvider(providerId)
-    setStorageReady(true)
-    try {
-      const name = await storage.getFolderName()
-      setFolderName(name)
-    } catch (e) {
-      setError(`Failed to get folder name: ${e.message}`)
-    }
-  }
+  const supported = fsa.isSupported()
 
-  // Try to restore storage on load
+  // Try to restore folder on load
   useEffect(() => {
-    const savedProvider = localStorage.getItem('storage-provider')
-    if (savedProvider) {
-      // StoragePicker will handle restoration
-    } else {
+    if (!supported) { setLoading(false); return }
+    fsa.restoreFolder().then(h => {
+      if (h) {
+        setHandle(h)
+        setFolderName(h.name)
+      }
       setLoading(false)
-    }
-  }, [])
+    })
+  }, [supported])
 
-  const loadAll = useCallback(async () => {
-    if (!storageReady) return
+  const loadAll = useCallback(async (h) => {
+    if (!h) return
     try {
-      await storage.scaffold(mode === 'simple')
+      await fsa.scaffoldIfEmpty(h)
       const [logText, goalsText, recipesText] = await Promise.all([
-        storage.readFile('daily-log.md'),
-        storage.readFile('goals.md'),
-        storage.readFile('recipes.md'),
+        fsa.readFile(h, 'daily-log.md'),
+        fsa.readFile(h, 'goals.md'),
+        fsa.readFile(h, 'recipes.md'),
       ])
       setLogEntries(rowsToObjects(...Object.values(parseTable(logText, DAILY_LOG_HEADERS)).slice(0, 2)))
       setGoals(rowsToObjects(...Object.values(parseTable(goalsText, GOALS_HEADERS)).slice(0, 2)))
@@ -100,27 +91,32 @@ export default function App() {
     } catch (e) {
       setError(`Load error: ${e.message}`)
     }
-  }, [storageReady, mode])
+  }, [])
 
-  useEffect(() => { 
-    if (storageReady) {
-      loadAll()
-      setLoading(false)
+  useEffect(() => { if (handle) loadAll(handle) }, [handle, loadAll])
+
+  const pickFolder = async () => {
+    try {
+      const h = await fsa.pickFolder()
+      setHandle(h)
+      setFolderName(h.name)
+    } catch (e) {
+      if (e.name !== 'AbortError') setError(`Pick error: ${e.message}`)
     }
-  }, [storageReady, loadAll])
+  }
 
   const saveLog = async (newEntries) => {
     const sorted = [...newEntries].sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
-    const original = await storage.readFile('daily-log.md')
+    const original = await fsa.readFile(handle, 'daily-log.md')
     const next = replaceFirstTable(original, DAILY_LOG_HEADERS, objectsToRows(DAILY_LOG_HEADERS, sorted))
-    await storage.writeFile('daily-log.md', next)
+    await fsa.writeFile(handle, 'daily-log.md', next)
     setLogEntries(sorted)
   }
 
   const saveRecipes = async (newRecipes) => {
-    const original = await storage.readFile('recipes.md')
+    const original = await fsa.readFile(handle, 'recipes.md')
     const next = replaceFirstTable(original, RECIPE_HEADERS, objectsToRows(RECIPE_HEADERS, newRecipes))
-    await storage.writeFile('recipes.md', next)
+    await fsa.writeFile(handle, 'recipes.md', next)
     setRecipes(newRecipes)
   }
 
@@ -134,23 +130,38 @@ export default function App() {
 
   if (loading) return <div className="app"><div className="empty">Loading…</div></div>
 
-  // Show storage picker if no storage is configured
-  if (!storageReady) {
-    return <StoragePicker onStorageReady={handleStorageReady} />
+  if (!supported) {
+    return (
+      <div className="app">
+        <div className="banner error">
+          This browser doesn't support the File System Access API. Use Chrome, Edge, or another Chromium-based browser.
+        </div>
+      </div>
+    )
+  }
+
+  if (!handle) {
+    return (
+      <div className="app">
+        <div className="welcome">
+          <h1>🥗 Food Tracker</h1>
+          <p>Pick a folder to store your food log. Your data lives in markdown files you own.</p>
+          <button className="btn" onClick={pickFolder}>Choose folder</button>
+        </div>
+      </div>
+    )
   }
 
   if (mode === 'simple') {
-    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} />
+    return <SimpleMode handle={handle} folderName={folderName} onPickFolder={pickFolder} mode={mode} setMode={switchMode} />
   }
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1 className="app-title">
-          🥗 Food Tracker
-          <span className="folder-pill" title="Storage location">📁 {folderName}</span>
-        </h1>
+        <h1 className="app-title">🥗 Food Tracker</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="folder-pill" title="Storage folder">📁 {folderName}</span>
           <ModePill mode={mode} setMode={switchMode} />
         </div>
       </header>

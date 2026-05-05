@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import * as fsa from './storage/fsa.js'
+import { storage } from './storage/storage.js'
 import {
   parseTable, rowsToObjects, objectsToRows, replaceFirstTable,
   PROTEIN_LOG_HEADERS, GOALS_HEADERS,
@@ -57,7 +57,7 @@ function currentWeekKey() {
   return sun.toISOString().slice(0, 10)
 }
 
-export default function SimpleMode({ handle, folderName, onPickFolder, mode, setMode }) {
+export default function SimpleMode({ storageReady, folderName, mode, setMode }) {
   const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
@@ -75,14 +75,14 @@ export default function SimpleMode({ handle, folderName, onPickFolder, mode, set
   // Week expand state
   const [expandedWeeks, setExpandedWeeks] = useState(() => new Set([currentWeekKey()]))
 
-  const loadAll = useCallback(async (h) => {
-    if (!h) return
+  const loadAll = useCallback(async () => {
+    if (!storageReady) return
     try {
-      await fsa.scaffoldSimpleModeIfEmpty(h)
+      await storage.scaffold(true) // true for simple mode
       const [logText, goalsText, sysText] = await Promise.all([
-        fsa.readFile(h, 'protein-log.md').catch(() => ''),
-        fsa.readFile(h, 'goals.md').catch(() => ''),
-        fsa.readFile(h, 'systems.md').catch(() => ''),
+        storage.readFile('protein-log.md').catch(() => ''),
+        storage.readFile('goals.md').catch(() => ''),
+        storage.readFile('systems.md').catch(() => ''),
       ])
       const parsed = parseTable(logText, PROTEIN_LOG_HEADERS)
       setEntries(rowsToObjects(parsed.headers.length ? parsed.headers : PROTEIN_LOG_HEADERS, parsed.rows))
@@ -93,15 +93,15 @@ export default function SimpleMode({ handle, folderName, onPickFolder, mode, set
     } catch (e) {
       setError(`Load error: ${e.message}`)
     }
-  }, [])
+  }, [storageReady])
 
-  useEffect(() => { if (handle) loadAll(handle) }, [handle, loadAll])
+  useEffect(() => { if (storageReady) loadAll() }, [storageReady, loadAll])
 
   const saveLog = async (newEntries) => {
     const sorted = [...newEntries].sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
-    const original = await fsa.readFile(handle, 'protein-log.md').catch(() => '')
+    const original = await storage.readFile('protein-log.md').catch(() => '')
     const next = replaceFirstTable(original, PROTEIN_LOG_HEADERS, objectsToRows(PROTEIN_LOG_HEADERS, sorted))
-    await fsa.writeFile(handle, 'protein-log.md', next)
+    await storage.writeFile('protein-log.md', next)
     setEntries(sorted)
   }
 
@@ -261,13 +261,15 @@ export default function SimpleMode({ handle, folderName, onPickFolder, mode, set
               {isExpanded && weekEntries.map((e, i) => (
                 <div key={i} className="entry-row">
                   <span className="entry-row-date">{e.Date}</span>
-                  <span className="entry-row-meal">{e.Meal}</span>
-                  <span className="entry-row-protein"><strong>{e['Protein (g)']}</strong>g</span>
-                  <button
-                    className="icon-btn"
-                    title="Delete"
-                    onClick={() => deleteEntry(entries.indexOf(e))}
-                  >🗑</button>
+                  <div className="entry-row-details">
+                    <span className="entry-row-meal">{e.Meal}</span>
+                    <span className="entry-row-protein"><strong>{e['Protein (g)']}</strong>g</span>
+                    <button
+                      className="icon-btn"
+                      title="Delete"
+                      onClick={() => deleteEntry(entries.indexOf(e))}
+                    >🗑</button>
+                  </div>
                 </div>
               ))}
             </div>
