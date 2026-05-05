@@ -371,7 +371,7 @@ table.simple th {
 .plan-bar-planned {}
 .plan-bar-time {}
 .plan-bar-goal {}
-/* Mode switcher pill */
+/* Mode switcher pill — used inside settings panel */
 .mode-pill {
   display: flex;
   border: 1px solid var(--border);
@@ -391,6 +391,85 @@ table.simple th {
 .mode-pill-btn.active {
   background: var(--accent);
   color: #fff;
+}
+
+/* Settings button + dropdown panel */
+.settings-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--text-muted);
+  line-height: 1;
+  transition: background 0.15s;
+}
+.settings-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+.settings-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 220px;
+  padding: 0;
+  overflow: hidden;
+}
+.settings-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  font-weight: 600;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.settings-panel-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 0 2px;
+  line-height: 1;
+}
+.settings-panel-section {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-panel-section:last-child {
+  border-bottom: none;
+}
+.settings-panel-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.settings-panel-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.settings-panel-value {
+  font-size: 12px;
+  color: var(--text);
 }
 
 /* ── Mobile Responsive ──────────────────────────── */

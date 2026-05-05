@@ -57,8 +57,7 @@ function currentWeekKey() {
   return sun.toISOString().slice(0, 10)
 }
 
-export default function SimpleMode({ storageReady, folderName, mode, setMode }) {
-  const [entries, setEntries] = useState([])
+export default function SimpleMode({ storageReady, folderName, mode, setMode }) {  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
@@ -151,7 +150,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode }) 
         <h1 className="app-title">🥗 Food Tracker</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {folderName && <span className="folder-pill" title="Storage folder">📁 {folderName}</span>}
-          <ModePill mode={mode} setMode={setMode} />
+          <SettingsButton mode={mode} setMode={setMode} folderName={folderName} />
         </div>
       </header>
 
@@ -351,17 +350,50 @@ function AddEntrySimple({ onAdd, defaultDate }) {
   )
 }
 
-export function ModePill({ mode, setMode }) {
+function SettingsButton({ mode, setMode, folderName }) {
+  const [open, setOpen] = useState(false)
+
   return (
-    <div className="mode-pill">
+    <div style={{ position: 'relative' }}>
       <button
-        className={`mode-pill-btn ${mode === 'simple' ? 'active' : ''}`}
-        onClick={() => setMode('simple')}
-      >Simple</button>
-      <button
-        className={`mode-pill-btn ${mode === 'advanced' ? 'active' : ''}`}
-        onClick={() => setMode('advanced')}
-      >Advanced</button>
+        className="settings-btn"
+        onClick={() => setOpen(o => !o)}
+        title="Settings"
+        aria-label="Settings"
+      >
+        ⚙
+      </button>
+      {open && (
+        <>
+          <div className="settings-backdrop" onClick={() => setOpen(false)} />
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <span>Settings</span>
+              <button className="settings-panel-close" onClick={() => setOpen(false)}>✕</button>
+            </div>
+            <div className="settings-panel-section">
+              <div className="settings-panel-label">Mode</div>
+              <div className="mode-pill">
+                <button
+                  className={`mode-pill-btn ${mode === 'simple' ? 'active' : ''}`}
+                  onClick={() => { setMode('simple'); setOpen(false) }}
+                >Simple</button>
+                <button
+                  className={`mode-pill-btn ${mode === 'advanced' ? 'active' : ''}`}
+                  onClick={() => { setMode('advanced'); setOpen(false) }}
+                >Advanced</button>
+              </div>
+              <div className="settings-panel-hint">
+                {mode === 'simple'
+                  ? 'Simple: protein-only tracking'
+                  : 'Advanced: full macro tracking'}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
+
+

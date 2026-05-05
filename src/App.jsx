@@ -7,7 +7,8 @@ import {
 import { LocalStorageProvider } from './storage/localstorage-provider.js'
 import { migrate, resumePendingMigration, hasPendingMigration, makeProvider } from './storage/migrate.js'
 import * as llm from './llm.js'
-import SimpleMode, { ModePill } from './SimpleMode.jsx'
+import SimpleMode from './SimpleMode.jsx'
+import { SettingsButton } from './SettingsButton.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -179,9 +180,7 @@ export default function App() {
           🥗 Food Tracker
           <span className="folder-pill" title="Storage location">📁 {folderName}</span>
         </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ModePill mode={mode} setMode={switchMode} />
-        </div>
+        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} />
       </header>
 
       <nav className="tabs">
@@ -202,7 +201,58 @@ export default function App() {
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
-      {tab === 'settings' && <SettingsView folderName={folderName} storageProvider={storageProvider} onSwitchMode={() => switchMode('simple')} />}
+      {tab === 'settings' && <SettingsView folderName={folderName} storageProvider={storageProvider} />}
+    </div>
+  )
+}
+
+/** ⚙ Settings button shown in header — opens a compact settings panel */
+function SettingsButton({ mode, setMode, folderName, storageProvider }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        className="settings-btn"
+        onClick={() => setOpen(o => !o)}
+        title="Settings"
+        aria-label="Settings"
+      >
+        ⚙
+      </button>
+      {open && (
+        <>
+          <div className="settings-backdrop" onClick={() => setOpen(false)} />
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <span>Settings</span>
+              <button className="settings-panel-close" onClick={() => setOpen(false)}>✕</button>
+            </div>
+            <div className="settings-panel-section">
+              <div className="settings-panel-label">Mode</div>
+              <div className="mode-pill">
+                <button
+                  className={`mode-pill-btn ${mode === 'simple' ? 'active' : ''}`}
+                  onClick={() => { setMode('simple'); setOpen(false) }}
+                >Simple</button>
+                <button
+                  className={`mode-pill-btn ${mode === 'advanced' ? 'active' : ''}`}
+                  onClick={() => { setMode('advanced'); setOpen(false) }}
+                >Advanced</button>
+              </div>
+              <div className="settings-panel-hint">
+                {mode === 'simple'
+                  ? 'Simple: protein-only tracking'
+                  : 'Advanced: full macro tracking'}
+              </div>
+            </div>
+            <div className="settings-panel-section">
+              <div className="settings-panel-label">Storage</div>
+              <div className="settings-panel-value">📁 {folderName}</div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -660,7 +710,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
   )
 }
 
-function SettingsView({ folderName, storageProvider, onSwitchMode }) {
+function SettingsView({ folderName, storageProvider }) {
   const [provider, setProviderState] = useState(llm.getProvider())
   const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(llm.getProvider()))
   const [model, setModelState] = useState(() => llm.getModel(llm.getProvider()))
@@ -815,12 +865,8 @@ function SettingsView({ folderName, storageProvider, onSwitchMode }) {
         </ul>
         <p className="muted">Edit them in any text editor; the app will pick up changes.</p>
       </div>
-
-      <div className="card">
-        <h2>App Mode</h2>
-        <p className="muted">Switch to Simple Mode for protein-only tracking with a streamlined interface.</p>
-        <button className="btn btn-secondary" onClick={onSwitchMode}>Switch to Simple Mode</button>
-      </div>
     </>
   )
 }
+
+
