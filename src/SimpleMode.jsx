@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { storage } from './storage/storage.js'
+import { SettingsButton } from './SettingsButton.jsx'
 import {
   parseTable, rowsToObjects, objectsToRows, replaceFirstTable,
   PROTEIN_LOG_HEADERS, GOALS_HEADERS,
@@ -346,89 +347,6 @@ function AddEntrySimple({ onAdd, defaultDate }) {
       <div style={{ marginTop: 8 }}>
         <button className="btn" onClick={save} disabled={!meal.trim()}>Save</button>
       </div>
-    </div>
-  )
-}
-
-function SettingsButton({ mode, setMode, folderName, storageProvider, onRenameFolder }) {
-  const [open, setOpen] = useState(false)
-  const [editingFolder, setEditingFolder] = useState(false)
-  const [folderInput, setFolderInput] = useState('')
-
-  const isCloud = storageProvider === 'onedrive' || storageProvider === 'google-drive'
-  const folderPart = folderName?.includes('/') ? folderName.split('/').slice(1).join('/') : folderName
-  const providerPart = folderName?.includes('/') ? folderName.split('/')[0] : null
-
-  const startEdit = () => { setFolderInput(folderPart || ''); setEditingFolder(true) }
-  const saveFolder = async () => {
-    const name = folderInput.trim()
-    if (name && onRenameFolder) await onRenameFolder(name)
-    setEditingFolder(false)
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        className="settings-btn"
-        onClick={() => setOpen(o => !o)}
-        title="Settings"
-        aria-label="Settings"
-      >
-        ⚙
-      </button>
-      {open && (
-        <>
-          <div className="settings-backdrop" onClick={() => setOpen(false)} />
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <span>Settings</span>
-              <button className="settings-panel-close" onClick={() => setOpen(false)}>✕</button>
-            </div>
-            <div className="settings-panel-section">
-              <div className="settings-panel-label">Mode</div>
-              <div className="mode-pill">
-                <button
-                  className={`mode-pill-btn ${mode === 'simple' ? 'active' : ''}`}
-                  onClick={() => { setMode('simple'); setOpen(false) }}
-                >Simple</button>
-                <button
-                  className={`mode-pill-btn ${mode === 'advanced' ? 'active' : ''}`}
-                  onClick={() => { setMode('advanced'); setOpen(false) }}
-                >Advanced</button>
-              </div>
-              <div className="settings-panel-hint">
-                {mode === 'simple'
-                  ? 'Simple: protein-only tracking'
-                  : 'Advanced: full macro tracking'}
-              </div>
-            </div>
-            <div className="settings-panel-section">
-              <div className="settings-panel-label">Storage</div>
-              {isCloud && editingFolder ? (
-                <div className="settings-folder-edit">
-                  {providerPart && <span className="settings-folder-prefix">{providerPart}/</span>}
-                  <input
-                    className="settings-folder-input"
-                    value={folderInput}
-                    onChange={e => setFolderInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveFolder()}
-                    autoFocus
-                  />
-                  <button className="settings-folder-save" onClick={saveFolder} title="Save">✓</button>
-                  <button className="settings-folder-cancel" onClick={() => setEditingFolder(false)} title="Cancel">✕</button>
-                </div>
-              ) : (
-                <div className="settings-panel-value">
-                  📁 {folderName}
-                  {isCloud && (
-                    <button className="settings-folder-rename-btn" onClick={startEdit} title="Rename folder">✏️</button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   )
 }

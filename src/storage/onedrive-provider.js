@@ -313,7 +313,6 @@ export class OneDriveProvider extends StorageProvider {
   
   async ensureFolderExists() {
     const url = `${GRAPH_BASE}/me/drive/root:${this.folderPath}`
-    
     try {
       const response = await fetch(url, {
         headers: {
@@ -329,6 +328,18 @@ export class OneDriveProvider extends StorageProvider {
       // Folder might not exist, try to create it
       await this.createFolder()
     }
+  }
+
+  /** List all folders in the drive root (for the folder picker) */
+  async listRootFolders() {
+    await this.ensureValidToken()
+    const url = `${GRAPH_BASE}/me/drive/root/children?$filter=folder ne null&$select=name,id&$orderby=name&$top=200`
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${this.accessToken}` }
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.value || []).map(f => f.name)
   }
   
   async createFolder() {
