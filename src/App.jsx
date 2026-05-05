@@ -168,8 +168,15 @@ export default function App() {
     return <div className="app"><div className="empty">Initializing storage…</div></div>
   }
 
+  const renameFolder = async (newName) => {
+    if (!newName || !storage.setFolder) return
+    storage.setFolder(newName)
+    const name = await storage.getFolderName()
+    setFolderName(name)
+  }
+
   if (mode === 'simple') {
-    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} />
+    return <SimpleMode storageReady={storageReady} folderName={folderName} storageProvider={storageProvider} onRenameFolder={renameFolder} mode={mode} setMode={switchMode} />
   }
 
   return (
@@ -179,7 +186,7 @@ export default function App() {
           🥗 Food Tracker
           <span className="folder-pill" title="Storage location">📁 {folderName}</span>
         </h1>
-        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} />
+        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} onRenameFolder={renameFolder} />
       </header>
 
       <nav className="tabs">
@@ -206,8 +213,25 @@ export default function App() {
 }
 
 /** ⚙ Settings button shown in header — opens a compact settings panel */
-function SettingsButton({ mode, setMode, folderName, storageProvider }) {
+function SettingsButton({ mode, setMode, folderName, storageProvider, onRenameFolder }) {
   const [open, setOpen] = useState(false)
+  const [editingFolder, setEditingFolder] = useState(false)
+  const [folderInput, setFolderInput] = useState('')
+
+  const isCloud = storageProvider === 'onedrive' || storageProvider === 'google-drive'
+  // Extract just the folder part (e.g. "OneDrive/food-tracker" → "food-tracker")
+  const folderPart = folderName?.includes('/') ? folderName.split('/').slice(1).join('/') : folderName
+  const providerPart = folderName?.includes('/') ? folderName.split('/')[0] : null
+
+  const startEdit = () => {
+    setFolderInput(folderPart || '')
+    setEditingFolder(true)
+  }
+  const saveFolder = async () => {
+    const name = folderInput.trim()
+    if (name && onRenameFolder) await onRenameFolder(name)
+    setEditingFolder(false)
+  }
 
   return (
     <div style={{ position: 'relative' }}>
@@ -247,7 +271,27 @@ function SettingsButton({ mode, setMode, folderName, storageProvider }) {
             </div>
             <div className="settings-panel-section">
               <div className="settings-panel-label">Storage</div>
-              <div className="settings-panel-value">📁 {folderName}</div>
+              {isCloud && editingFolder ? (
+                <div className="settings-folder-edit">
+                  {providerPart && <span className="settings-folder-prefix">{providerPart}/</span>}
+                  <input
+                    className="settings-folder-input"
+                    value={folderInput}
+                    onChange={e => setFolderInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveFolder()}
+                    autoFocus
+                  />
+                  <button className="settings-folder-save" onClick={saveFolder} title="Save">✓</button>
+                  <button className="settings-folder-cancel" onClick={() => setEditingFolder(false)} title="Cancel">✕</button>
+                </div>
+              ) : (
+                <div className="settings-panel-value">
+                  📁 {folderName}
+                  {isCloud && (
+                    <button className="settings-folder-rename-btn" onClick={startEdit} title="Rename folder">✏️</button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </>

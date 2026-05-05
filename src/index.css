@@ -470,7 +470,51 @@ table.simple th {
 .settings-panel-value {
   font-size: 12px;
   color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
+.settings-folder-rename-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 12px;
+  opacity: 0.6;
+  line-height: 1;
+}
+.settings-folder-rename-btn:hover { opacity: 1; }
+.settings-folder-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.settings-folder-prefix {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.settings-folder-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text);
+}
+.settings-folder-save,
+.settings-folder-cancel {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.settings-folder-save:hover { color: var(--accent); }
+.settings-folder-cancel:hover { color: var(--text); }
 
 /* ── Mobile Responsive ──────────────────────────── */
 @media (max-width: 768px) {

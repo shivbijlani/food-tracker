@@ -57,7 +57,7 @@ function currentWeekKey() {
   return sun.toISOString().slice(0, 10)
 }
 
-export default function SimpleMode({ storageReady, folderName, mode, setMode }) {  const [entries, setEntries] = useState([])
+export default function SimpleMode({ storageReady, folderName, storageProvider, onRenameFolder, mode, setMode }) {  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
@@ -150,7 +150,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode }) 
         <h1 className="app-title">🥗 Food Tracker</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {folderName && <span className="folder-pill" title="Storage folder">📁 {folderName}</span>}
-          <SettingsButton mode={mode} setMode={setMode} folderName={folderName} />
+          <SettingsButton mode={mode} setMode={setMode} folderName={folderName} storageProvider={storageProvider} onRenameFolder={onRenameFolder} />
         </div>
       </header>
 
@@ -350,8 +350,21 @@ function AddEntrySimple({ onAdd, defaultDate }) {
   )
 }
 
-function SettingsButton({ mode, setMode, folderName }) {
+function SettingsButton({ mode, setMode, folderName, storageProvider, onRenameFolder }) {
   const [open, setOpen] = useState(false)
+  const [editingFolder, setEditingFolder] = useState(false)
+  const [folderInput, setFolderInput] = useState('')
+
+  const isCloud = storageProvider === 'onedrive' || storageProvider === 'google-drive'
+  const folderPart = folderName?.includes('/') ? folderName.split('/').slice(1).join('/') : folderName
+  const providerPart = folderName?.includes('/') ? folderName.split('/')[0] : null
+
+  const startEdit = () => { setFolderInput(folderPart || ''); setEditingFolder(true) }
+  const saveFolder = async () => {
+    const name = folderInput.trim()
+    if (name && onRenameFolder) await onRenameFolder(name)
+    setEditingFolder(false)
+  }
 
   return (
     <div style={{ position: 'relative' }}>
@@ -388,6 +401,30 @@ function SettingsButton({ mode, setMode, folderName }) {
                   ? 'Simple: protein-only tracking'
                   : 'Advanced: full macro tracking'}
               </div>
+            </div>
+            <div className="settings-panel-section">
+              <div className="settings-panel-label">Storage</div>
+              {isCloud && editingFolder ? (
+                <div className="settings-folder-edit">
+                  {providerPart && <span className="settings-folder-prefix">{providerPart}/</span>}
+                  <input
+                    className="settings-folder-input"
+                    value={folderInput}
+                    onChange={e => setFolderInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveFolder()}
+                    autoFocus
+                  />
+                  <button className="settings-folder-save" onClick={saveFolder} title="Save">✓</button>
+                  <button className="settings-folder-cancel" onClick={() => setEditingFolder(false)} title="Cancel">✕</button>
+                </div>
+              ) : (
+                <div className="settings-panel-value">
+                  📁 {folderName}
+                  {isCloud && (
+                    <button className="settings-folder-rename-btn" onClick={startEdit} title="Rename folder">✏️</button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </>
