@@ -173,7 +173,7 @@ export default function App() {
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
-      {tab === 'settings' && <SettingsView onChangeFolder={pickFolder} folderName={folderName} onSwitchMode={() => switchMode('simple')} />}
+      {tab === 'settings' && <SettingsView folderName={folderName} storageProvider={storageProvider} onSwitchMode={() => switchMode('simple')} />}
     </div>
   )
 }
@@ -506,7 +506,7 @@ function GoalsView({ goals }) {
   )
 }
 
-function SettingsView({ onChangeFolder, folderName, onSwitchMode }) {
+function SettingsView({ folderName, storageProvider, onSwitchMode }) {
   const [provider, setProviderState] = useState(llm.getProvider())
   const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(llm.getProvider()))
   const [model, setModelState] = useState(() => llm.getModel(llm.getProvider()))
@@ -526,14 +526,23 @@ function SettingsView({ onChangeFolder, folderName, onSwitchMode }) {
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const handleChangeStorage = () => {
+    localStorage.removeItem('storage-provider')
+    window.location.reload()
+  }
+
   const providerInfo = llm.PROVIDERS[provider]
+  const storageLabel = storageProvider === 'onedrive' ? 'OneDrive' 
+    : storageProvider === 'fsa' ? 'Local Folder' 
+    : storageProvider === 'google-drive' ? 'Google Drive'
+    : 'Unknown'
 
   return (
     <>
       <div className="card">
-        <h2>Storage Folder</h2>
-        <p className="muted">Currently: <strong>{folderName}</strong></p>
-        <button className="btn btn-secondary" onClick={onChangeFolder}>Change folder…</button>
+        <h2>Storage</h2>
+        <p className="muted">Currently using: <strong>{storageLabel}</strong> ({folderName})</p>
+        <button className="btn btn-secondary" onClick={handleChangeStorage}>Change storage provider…</button>
       </div>
 
       <div className="card">
