@@ -169,15 +169,8 @@ export default function App() {
     return <div className="app"><div className="empty">Initializing storage…</div></div>
   }
 
-  const renameFolder = async (newName) => {
-    if (!newName || !storage.setFolder) return
-    storage.setFolder(newName)
-    const name = await storage.getFolderName()
-    setFolderName(name)
-  }
-
   if (mode === 'simple') {
-    return <SimpleMode storageReady={storageReady} folderName={folderName} storageProvider={storageProvider} onRenameFolder={renameFolder} mode={mode} setMode={switchMode} />
+    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} />
   }
 
   return (
@@ -187,7 +180,7 @@ export default function App() {
           🥗 Food Tracker
           <span className="folder-pill" title="Storage location">📁 {folderName}</span>
         </h1>
-        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} onRenameFolder={renameFolder} />
+        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} />
       </header>
 
       <nav className="tabs">
@@ -542,22 +535,13 @@ function GoalsView({ goals }) {
 }
 
 function MigrateStorageCard({ storageProvider, folderName }) {
-  const [confirming, setConfirming] = useState(null) // target id awaiting confirm
+  const [confirming, setConfirming] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [keepSource, setKeepSource] = useState(true)
-  const [customFolder, setCustomFolder] = useState('food-tracker')
   const all = getAvailableProviders()
   const others = all.filter(id => id !== storageProvider)
   const isCloud = (id) => id === PROVIDERS.ONEDRIVE || id === PROVIDERS.GOOGLE_DRIVE
-
-  const handleConfirming = (id) => {
-    setConfirming(id)
-    const existing = id === PROVIDERS.ONEDRIVE
-      ? (localStorage.getItem('ft_od_folder') || 'food-tracker')
-      : 'food-tracker'
-    setCustomFolder(existing)
-  }
 
   const startMigrate = async (toId) => {
     setError('')
@@ -566,16 +550,12 @@ function MigrateStorageCard({ storageProvider, folderName }) {
       const result = await migrate(getProvider(), toId, {
         deleteSource: !keepSource,
         fromId: storageProvider,
-        folderName: isCloud(toId) ? (customFolder.trim() || 'food-tracker') : undefined,
       })
       if (result.ok) {
         window.location.reload()
         return
       }
-      if (result.redirected) {
-        // Page is about to redirect for OAuth — leave busy spinner up
-        return
-      }
+      if (result.redirected) return
       setError(result.error || 'Migration failed')
     } catch (e) {
       setError(e.message || 'Migration failed')
@@ -601,7 +581,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
               <button
                 key={id}
                 className="btn btn-secondary"
-                onClick={() => handleConfirming(id)}
+                onClick={() => setConfirming(id)}
                 disabled={busy}
               >
                 Migrate to {getProviderName(id)} →
@@ -617,25 +597,6 @@ function MigrateStorageCard({ storageProvider, folderName }) {
             <strong>Migrate to {getProviderName(confirming)}?</strong> All your tracking data
             will be copied from {getProviderName(storageProvider)} to {getProviderName(confirming)}.
           </p>
-          {isCloud(confirming) && (
-            <div style={{ margin: '0.5rem 0' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px' }}>
-                Folder name in {getProviderName(confirming)}
-              </label>
-              <input
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  background: '#1e293b', border: '1px solid #334155',
-                  color: '#e2e8f0', borderRadius: '4px', padding: '5px 8px',
-                  fontSize: '0.875rem'
-                }}
-                value={customFolder}
-                onChange={e => setCustomFolder(e.target.value)}
-                placeholder="food-tracker"
-                disabled={busy}
-              />
-            </div>
-          )}
           {storageProvider === PROVIDERS.LOCAL_STORAGE && (
             <label style={{ display: 'block', margin: '0.5rem 0' }}>
               <input
