@@ -765,7 +765,8 @@ function SettingsView({ folderName, storageProvider }) {
                   placeholder={llm.PROVIDERS.openrouter.defaultModel}
                 />
                 <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                  Popular: <code>openai/gpt-4o-mini</code> · <code>anthropic/claude-haiku-4-5</code> · <code>google/gemini-flash-1.5</code>
+                  Free: <code>meta-llama/llama-3.3-70b-instruct:free</code> · <code>openai/gpt-oss-120b:free</code><br/>
+                  Paid: <code>openai/gpt-4o-mini</code> · <code>anthropic/claude-haiku-4-5</code>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
