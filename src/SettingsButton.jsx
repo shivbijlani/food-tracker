@@ -1,8 +1,21 @@
 import { useState } from 'react'
+import { PROVIDERS, getProvider } from './storage/storage.js'
+import { FSAProvider } from './storage/fsa-provider.js'
+import { setProvider } from './storage/storage.js'
 
 /** Settings button shown in the header of both Simple and Advanced modes. */
-export function SettingsButton({ mode, setMode, folderName }) {
+export function SettingsButton({ mode, setMode, folderName, storageProvider }) {
   const [open, setOpen] = useState(false)
+
+  const changeFolder = async () => {
+    const fsa = new FSAProvider()
+    const handle = await fsa.pick()
+    if (handle) {
+      setProvider(fsa)
+      localStorage.setItem('storage-provider', PROVIDERS.FSA)
+      window.location.reload()
+    }
+  }
 
   return (
     <div style={{ position: 'relative' }}>
@@ -45,6 +58,11 @@ export function SettingsButton({ mode, setMode, folderName }) {
             <div className="settings-panel-section">
               <div className="settings-panel-label">Storage</div>
               <div className="settings-panel-value">📁 {folderName}</div>
+              {storageProvider === PROVIDERS.FSA && (
+                <button className="settings-panel-btn" onClick={changeFolder}>
+                  📂 Change folder
+                </button>
+              )}
             </div>
           </div>
         </>

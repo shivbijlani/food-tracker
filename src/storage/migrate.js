@@ -63,8 +63,25 @@ export function clearPendingMigration() {
  * @returns {Promise<{ok: boolean, redirected?: boolean, error?: string}>}
  */
 export async function migrate(fromProvider, toId, opts = {}) {
+  // For FSA: show directory picker NOW (user gesture must not be consumed by async ops first)
+  let fsaTarget = null
+  if (toId === PROVIDERS.FSA) {
+    fsaTarget = makeProvider(toId)
+    const handle = await fsaTarget.pick()
+    if (!handle) return { ok: false, error: 'Folder selection cancelled' }
+  }
+
   // Snapshot all current files
   const payload = await snapshotFiles(fromProvider)
+
+  // FSA synchronous path — handle already picked above
+  if (fsaTarget) {
+    await restoreFiles(fsaTarget, payload)
+    setProvider(fsaTarget)
+    localStorage.setItem('storage-provider', toId)
+    if (opts.deleteSource && fromProvider.clear) await fromProvider.clear()
+    return { ok: true }
+  }
 
   const target = makeProvider(toId)
 
@@ -92,7 +109,7 @@ export async function migrate(fromProvider, toId, opts = {}) {
     return { ok: false, redirected: true }
   }
 
-  // Synchronous targets (LocalStorage, FSA)
+  // Synchronous target: LocalStorage only (FSA handled above)
   const ok = await target.init()
   if (!ok || !(await target.isReady())) {
     return { ok: false, error: 'Failed to initialize target storage' }

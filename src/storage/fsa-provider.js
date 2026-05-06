@@ -14,29 +14,30 @@ export class FSAProvider extends StorageProvider {
     super()
     this.dirHandle = null
   }
-  
+
+  /** Restore a previously-saved handle (no picker). Returns true only if permission already granted. */
   async init() {
     try {
-      // Try to restore from storage first
       this.dirHandle = await get('fsa-directory')
-      if (this.dirHandle) {
-        // Test if we can still access it
-        try {
-          await this.dirHandle.queryPermission({ mode: 'readwrite' })
-          return true
-        } catch (e) {
-          // Permission denied or handle invalid
-          this.dirHandle = null
-        }
-      }
-      
-      // Show picker
+      if (!this.dirHandle) return false
+      const permission = await this.dirHandle.queryPermission({ mode: 'readwrite' })
+      if (permission === 'granted') return true
+      this.dirHandle = null
+      return false
+    } catch {
+      this.dirHandle = null
+      return false
+    }
+  }
+
+  /** Show directory picker (requires user gesture). Returns the handle or null. */
+  async pick() {
+    try {
       this.dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
       await set('fsa-directory', this.dirHandle)
-      return true
-    } catch (e) {
-      console.error('FSA init failed:', e)
-      return false
+      return this.dirHandle
+    } catch {
+      return null
     }
   }
   

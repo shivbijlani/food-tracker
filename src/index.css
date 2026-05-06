@@ -471,6 +471,21 @@ table.simple th {
   font-size: 12px;
   color: var(--text);
 }
+.settings-panel-btn {
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  width: 100%;
+  text-align: left;
+}
+.settings-panel-btn:hover {
+  background: var(--surface);
+}
 
 /* ── Mobile Responsive ──────────────────────────── */
 @media (max-width: 768px) {

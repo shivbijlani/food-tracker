@@ -58,7 +58,7 @@ function currentWeekKey() {
   return sun.toISOString().slice(0, 10)
 }
 
-export default function SimpleMode({ storageReady, folderName, mode, setMode }) {  const [entries, setEntries] = useState([])
+export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider }) {  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
@@ -151,7 +151,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode }) 
         <h1 className="app-title">🥗 Food Tracker</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {folderName && <span className="folder-pill" title="Storage folder">📁 {folderName}</span>}
-          <SettingsButton mode={mode} setMode={setMode} folderName={folderName} />
+          <SettingsButton mode={mode} setMode={setMode} folderName={folderName} storageProvider={storageProvider} />
         </div>
       </header>
 

@@ -170,7 +170,7 @@ export default function App() {
   }
 
   if (mode === 'simple') {
-    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} />
+    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} storageProvider={storageProvider} />
   }
 
   return (
@@ -180,7 +180,7 @@ export default function App() {
           🥗 Food Tracker
           <span className="folder-pill" title="Storage location">📁 {folderName}</span>
         </h1>
-        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} />
+        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} />
       </header>
 
       <nav className="tabs">
