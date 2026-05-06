@@ -574,7 +574,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
       {!confirming && (
         <>
           <p className="muted" style={{ marginTop: '0.75rem' }}>
-            Migrate your data to a different storage backend. All your files will be copied.
+            Switch where your data lives. Your files will be copied to the new location.
           </p>
           <div className="storage-migrate-options">
             {others.map(id => (
@@ -584,7 +584,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
                 onClick={() => setConfirming(id)}
                 disabled={busy}
               >
-                Migrate to {getProviderName(id)} →
+                {isCloud(id) ? `☁ Sign in to sync with ${getProviderName(id)}` : `Switch to ${getProviderName(id)}`} →
               </button>
             ))}
           </div>
@@ -594,8 +594,8 @@ function MigrateStorageCard({ storageProvider, folderName }) {
       {confirming && (
         <div className="banner info" style={{ marginTop: '0.75rem' }}>
           <p>
-            <strong>Migrate to {getProviderName(confirming)}?</strong> All your tracking data
-            will be copied from {getProviderName(storageProvider)} to {getProviderName(confirming)}.
+            <strong>Switch to {getProviderName(confirming)}?</strong> Your data will be copied there.
+            You can keep using the app normally afterward.
           </p>
           {storageProvider === PROVIDERS.LOCAL_STORAGE && (
             <label style={{ display: 'block', margin: '0.5rem 0' }}>
@@ -604,17 +604,17 @@ function MigrateStorageCard({ storageProvider, folderName }) {
                 checked={!keepSource}
                 onChange={e => setKeepSource(!e.target.checked)}
               />{' '}
-              Delete browser storage copy after successful migration
+              Delete browser storage copy after switching
             </label>
           )}
           {isCloud(confirming) && (
             <p className="muted" style={{ fontSize: '0.85rem' }}>
-              You will be redirected to sign in. Your data will be copied automatically when you return.
+              You'll be redirected to sign in. Your data will be copied over automatically when you return.
             </p>
           )}
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
             <button className="btn" onClick={() => startMigrate(confirming)} disabled={busy}>
-              {busy ? 'Migrating…' : 'Yes, migrate'}
+              {busy ? 'Switching…' : 'Switch'}
             </button>
             <button className="btn btn-secondary" onClick={() => setConfirming(null)} disabled={busy}>
               Cancel
