@@ -534,6 +534,29 @@ function GoalsView({ goals }) {
   )
 }
 
+const STORAGE_META = {
+  [PROVIDERS.LOCAL_STORAGE]: {
+    tagline: 'Works everywhere, no setup',
+    pros: ['No sign-in needed', 'Instant start'],
+    cons: ['This browser only — won\'t sync to other devices'],
+  },
+  [PROVIDERS.FSA]: {
+    tagline: 'Plain text files on your computer',
+    pros: ['Files you own and can edit directly', 'Works offline', 'Survives browser resets'],
+    cons: ['Chrome or Edge desktop only'],
+  },
+  [PROVIDERS.ONEDRIVE]: {
+    tagline: 'Sync across all your devices',
+    pros: ['Access from any device', 'Automatic backup'],
+    cons: ['Requires Microsoft account'],
+  },
+  [PROVIDERS.GOOGLE_DRIVE]: {
+    tagline: 'Sync across all your devices',
+    pros: ['Access from any device', 'Automatic backup'],
+    cons: ['Requires Google account'],
+  },
+}
+
 function MigrateStorageCard({ storageProvider, folderName }) {
   const [confirming, setConfirming] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -573,20 +596,29 @@ function MigrateStorageCard({ storageProvider, folderName }) {
 
       {!confirming && (
         <>
-          <p className="muted" style={{ marginTop: '0.75rem' }}>
-            Switch where your data lives. Your files will be copied to the new location.
+          <p className="muted" style={{ marginTop: '0.25rem', marginBottom: '1rem' }}>
+            Choose where to store your data. You can switch at any time.
           </p>
-          <div className="storage-migrate-options">
-            {others.map(id => (
-              <button
-                key={id}
-                className="btn btn-secondary"
-                onClick={() => setConfirming(id)}
-                disabled={busy}
-              >
-                {isCloud(id) ? `☁ Sign in to sync with ${getProviderName(id)}` : `Switch to ${getProviderName(id)}`} →
-              </button>
-            ))}
+          <div className="storage-option-grid">
+            {others.map(id => {
+              const meta = STORAGE_META[id] || {}
+              const icon = { [PROVIDERS.LOCAL_STORAGE]: '🗂️', [PROVIDERS.FSA]: '💾', [PROVIDERS.ONEDRIVE]: '☁️', [PROVIDERS.GOOGLE_DRIVE]: '🌐' }[id] || '📁'
+              return (
+                <button key={id} className="storage-option-card" onClick={() => setConfirming(id)} disabled={busy}>
+                  <div className="storage-option-header">
+                    <span className="storage-option-icon">{icon}</span>
+                    <div>
+                      <div className="storage-option-name">{getProviderName(id)}</div>
+                      <div className="storage-option-tagline">{meta.tagline}</div>
+                    </div>
+                  </div>
+                  <div className="storage-option-details">
+                    {meta.pros?.map(p => <span key={p} className="storage-tag storage-tag-pro">✓ {p}</span>)}
+                    {meta.cons?.map(c => <span key={c} className="storage-tag storage-tag-con">· {c}</span>)}
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </>
       )}
