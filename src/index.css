@@ -783,6 +783,57 @@ table.simple th {
   }
 }
 
+/* ── LLM option cards ────────────────────────── */
+.llm-option-card {
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--bg);
+  margin-top: 0.75rem;
+}
+.llm-option-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.llm-option-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.llm-option-icon { font-size: 22px; line-height: 1; margin-top: 2px; }
+.llm-option-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.llm-option-tagline {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.llm-badge-recommended {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+.llm-badge-active {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+
 /* ── Storage Picker ──────────────────────────── */
 .storage-options {
   display: grid;

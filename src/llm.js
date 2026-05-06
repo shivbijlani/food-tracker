@@ -1,5 +1,6 @@
-// LLM client for nutrition estimation — supports OpenAI and Anthropic Claude.
-// User provides their own API key (stored in localStorage).
+// LLM client for nutrition estimation — supports OpenRouter (OAuth), GitHub Models, OpenAI, and Claude.
+
+import * as openrouterAuth from './openrouter-auth.js'
 
 const PROVIDER_STORAGE = 'food-tracker-llm-provider'
 const KEY_STORAGE = 'food-tracker-openai-key'
@@ -8,15 +9,20 @@ const CLAUDE_KEY_STORAGE = 'food-tracker-claude-key'
 const CLAUDE_MODEL_STORAGE = 'food-tracker-claude-model'
 const GITHUB_KEY_STORAGE = 'food-tracker-github-key'
 const GITHUB_MODEL_STORAGE = 'food-tracker-github-model'
+const OPENROUTER_MODEL_STORAGE = 'food-tracker-openrouter-model'
 
 export const PROVIDERS = {
+  openrouter: { label: 'OpenRouter', defaultModel: 'openai/gpt-4o-mini', oauth: true },
   github: { label: 'GitHub Models (free)', defaultModel: 'openai/gpt-4o-mini', keyPlaceholder: 'github_pat_… or ghp_…', keyUrl: 'https://github.com/settings/tokens' },
   openai: { label: 'OpenAI', defaultModel: 'gpt-4o-mini', keyPlaceholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
   claude: { label: 'Anthropic Claude', defaultModel: 'claude-haiku-4-5', keyPlaceholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/api-keys' },
 }
 
 export function getProvider() {
-  return localStorage.getItem(PROVIDER_STORAGE) || 'github'
+  const stored = localStorage.getItem(PROVIDER_STORAGE) || 'github'
+  // If openrouter is saved but user disconnected, fall back to github
+  if (stored === 'openrouter' && !openrouterAuth.isConnected()) return 'github'
+  return stored
 }
 export function setProvider(p) {
   if (p) localStorage.setItem(PROVIDER_STORAGE, p)
@@ -28,15 +34,18 @@ function keyStorageFor(provider) {
   return KEY_STORAGE
 }
 function modelStorageFor(provider) {
+  if (provider === 'openrouter') return OPENROUTER_MODEL_STORAGE
   if (provider === 'claude') return CLAUDE_MODEL_STORAGE
   if (provider === 'github') return GITHUB_MODEL_STORAGE
   return MODEL_STORAGE
 }
 
 export function getApiKey(provider = getProvider()) {
+  if (provider === 'openrouter') return openrouterAuth.getKey() || ''
   return localStorage.getItem(keyStorageFor(provider)) || ''
 }
 export function setApiKey(key, provider = getProvider()) {
+  if (provider === 'openrouter') return // managed by openrouter-auth
   const k = keyStorageFor(provider)
   if (key) localStorage.setItem(k, key)
   else localStorage.removeItem(k)
@@ -68,7 +77,10 @@ Be conservative. Round calories/calcium to nearest 10, protein to nearest 1, veg
 export async function estimateNutrition(foodDescription, { recipes = [], signal } = {}) {
   const provider = getProvider()
   const apiKey = getApiKey(provider)
-  if (!apiKey) throw new Error(`No ${PROVIDERS[provider].label} API key configured. Add one in Settings.`)
+  if (!apiKey) {
+    if (provider === 'openrouter') throw new Error('OpenRouter not connected. Connect in Settings → LLM.')
+    throw new Error(`No ${PROVIDERS[provider].label} API key configured. Add one in Settings.`)
+  }
 
   const recipeContext = recipes.length
     ? `\n\nKnown recipes (per serving):\n${recipes.map(r =>
@@ -80,7 +92,26 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   const systemContent = SYSTEM_PROMPT + recipeContext
 
   let res
-  if (provider === 'claude') {
+  if (provider === 'openrouter') {
+    res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://shivbijlani.github.io/food-tracker/',
+        'X-Title': 'Food Tracker',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemContent },
+          { role: 'user', content: foodDescription },
+        ],
+        temperature: 0.2,
+      }),
+      signal,
+    })
+  } else if (provider === 'claude') {
     res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -146,7 +177,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   if (provider === 'claude') {
     content = data.content?.[0]?.text
   } else {
-    // openai + github both use chat completions response shape
+    // openrouter, openai, github all use chat completions response shape
     content = data.choices?.[0]?.message?.content
   }
   if (!content) throw new Error('No response from model')

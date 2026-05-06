@@ -7,6 +7,7 @@ import {
 import { LocalStorageProvider } from './storage/localstorage-provider.js'
 import { migrate, resumePendingMigration, hasPendingMigration, makeProvider } from './storage/migrate.js'
 import * as llm from './llm.js'
+import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { SettingsButton } from './SettingsButton.jsx'
 
@@ -59,6 +60,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [mode, setModeState] = useState(() => localStorage.getItem('food-tracker-mode') || 'advanced')
+  const [orConnectedBanner, setOrConnectedBanner] = useState(false)
 
   const switchMode = (m) => {
     localStorage.setItem('food-tracker-mode', m)
@@ -75,6 +77,22 @@ export default function App() {
       setError(`Failed to get folder name: ${e.message}`)
     }
   }
+
+  // Handle OpenRouter OAuth callback on page load
+  useEffect(() => {
+    (async () => {
+      try {
+        const handled = await openrouterAuth.handleCallback()
+        if (handled) {
+          llm.setProvider('openrouter')
+          setOrConnectedBanner(true)
+          setTimeout(() => setOrConnectedBanner(false), 5000)
+        }
+      } catch (e) {
+        console.error('OpenRouter callback error:', e)
+      }
+    })()
+  }, [])
 
   // Initialize storage on load — default to localStorage, or restore saved provider
   useEffect(() => {
@@ -196,6 +214,11 @@ export default function App() {
       </nav>
 
       {error && <div className="banner error">{error}</div>}
+      {orConnectedBanner && (
+        <div className="banner" style={{ background: 'var(--good)', color: '#fff' }}>
+          ✅ OpenRouter connected! You can now estimate nutrition using GPT-4o-mini and 400+ other models.
+        </div>
+      )}
 
       {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntry} recipes={recipes} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} />}
@@ -660,31 +683,56 @@ function MigrateStorageCard({ storageProvider, folderName }) {
 }
 
 function SettingsView({ folderName, storageProvider }) {
-  const [provider, setProviderState] = useState(llm.getProvider())
-  const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(llm.getProvider()))
-  const [model, setModelState] = useState(() => llm.getModel(llm.getProvider()))
+  const [orConnected, setOrConnected] = useState(openrouterAuth.isConnected())
+  const [orModel, setOrModel] = useState(() => llm.getModel('openrouter'))
+  const [activeProvider, setActiveProvider] = useState(llm.getProvider())
   const [saved, setSaved] = useState(false)
+  const [showManual, setShowManual] = useState(!openrouterAuth.isConnected())
 
-  const handleProviderChange = (p) => {
-    setProviderState(p)
+  // Manual key section state
+  const initManualProvider = () => {
+    const p = llm.getProvider()
+    return p === 'openrouter' ? 'github' : p
+  }
+  const [manualProvider, setManualProvider] = useState(initManualProvider)
+  const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(manualProvider))
+  const [model, setModelState] = useState(() => llm.getModel(manualProvider))
+
+  const handleManualProviderChange = (p) => {
+    setManualProvider(p)
     setApiKeyState(llm.getApiKey(p))
     setModelState(llm.getModel(p))
   }
 
-  const saveSettings = () => {
-    llm.setProvider(provider)
-    llm.setApiKey(apiKey.trim(), provider)
-    llm.setModel(model.trim(), provider)
+  const activateOpenRouter = () => {
+    llm.setModel(orModel || llm.PROVIDERS.openrouter.defaultModel, 'openrouter')
+    llm.setProvider('openrouter')
+    setActiveProvider('openrouter')
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleChangeStorage = () => {
-    localStorage.removeItem('storage-provider')
-    window.location.reload()
+  const handleDisconnectOpenRouter = () => {
+    openrouterAuth.clearKey()
+    setOrConnected(false)
+    if (activeProvider === 'openrouter') {
+      llm.setProvider('github')
+      setActiveProvider('github')
+    }
+    setShowManual(true)
   }
 
-  const providerInfo = llm.PROVIDERS[provider]
+  const saveManualSettings = () => {
+    llm.setProvider(manualProvider)
+    llm.setApiKey(apiKey.trim(), manualProvider)
+    llm.setModel(model.trim(), manualProvider)
+    setActiveProvider(manualProvider)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const manualProviderInfo = llm.PROVIDERS[manualProvider]
+  const isOrActive = activeProvider === 'openrouter'
 
   return (
     <>
@@ -692,116 +740,143 @@ function SettingsView({ folderName, storageProvider }) {
 
       <div className="card">
         <h2>LLM for Nutrition Estimation</h2>
-        <p className="muted">
-          Used to estimate nutrition from food descriptions. Your API key is stored only in your browser's localStorage.
-        </p>
-        <div className="field">
-          <label>Provider</label>
-          <select value={provider} onChange={e => handleProviderChange(e.target.value)}>
-            {Object.entries(llm.PROVIDERS).map(([key, p]) => (
-              <option key={key} value={key}>{p.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>API key</label>
-          <input
-            type="password"
-            placeholder={providerInfo.keyPlaceholder}
-            value={apiKey}
-            onChange={e => setApiKeyState(e.target.value)}
-            autoComplete="off"
-          />
-          {provider === 'github' ? (
-            <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
-              <strong>Free — no billing required.</strong> To get your token:
-              <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
-                <li>Go to <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a></li>
-                <li>Give it any name (e.g. <em>food-tracker</em>)</li>
-                <li>Under <strong>Account permissions</strong> → <strong>Models</strong> → set to <strong>Read-only</strong></li>
-                <li>Click <strong>Generate token</strong>, copy it, paste above</li>
-              </ol>
-              Rate limits: ~150 low-tier requests/day (more than enough for food logging).
+
+        {/* OpenRouter OAuth option */}
+        <div className={`llm-option-card${isOrActive ? ' llm-option-active' : ''}`}>
+          <div className="llm-option-header">
+            <span className="llm-option-icon">🔀</span>
+            <div style={{ flex: 1 }}>
+              <div className="llm-option-name">
+                OpenRouter
+                {!orConnected && <span className="llm-badge-recommended">Recommended</span>}
+                {isOrActive && <span className="llm-badge-active">✓ Active</span>}
+              </div>
+              <div className="llm-option-tagline">Sign in once — access GPT-4o, Claude, Gemini and 400+ models</div>
             </div>
-          ) : provider === 'openai' ? (
-            <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
-              <strong>Pay-as-you-go.</strong> To get your API key:
-              <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
-                <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com/api-keys</a></li>
-                <li>Click <strong>Create new secret key</strong></li>
-                <li>Give it a name (e.g. <em>food-tracker</em>) and click <strong>Create secret key</strong></li>
-                <li>Copy the key (starts with <code>sk-</code>) — it won't be shown again</li>
-                <li>Paste it above and click <strong>Save</strong></li>
-              </ol>
-              Cost is minimal: gpt-4o-mini costs ~$0.00015 per nutrition estimate.
-              Your key is stored only in your browser — never sent to any server other than OpenAI.
-              <div style={{marginTop: '0.4rem'}}>
-                <button
-                  className="btn btn-secondary"
-                  style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
-                  onClick={async () => {
-                    try {
-                      const text = await navigator.clipboard.readText()
-                      if (text.startsWith('sk-')) {
-                        setApiKeyState(text.trim())
-                      } else {
-                        alert('Clipboard does not contain an OpenAI key (should start with sk-)')
-                      }
-                    } catch {
-                      alert('Could not read clipboard. Paste the key manually.')
-                    }
-                  }}
-                >
-                  📋 Paste from clipboard
-                </button>
+          </div>
+
+          {orConnected ? (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div className="field">
+                <label>Model</label>
+                <input
+                  value={orModel}
+                  onChange={e => setOrModel(e.target.value)}
+                  placeholder={llm.PROVIDERS.openrouter.defaultModel}
+                />
+                <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                  Popular: <code>openai/gpt-4o-mini</code> · <code>anthropic/claude-haiku-4-5</code> · <code>google/gemini-flash-1.5</code>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {!isOrActive && (
+                  <button className="btn" onClick={activateOpenRouter}>Use OpenRouter</button>
+                )}
+                {isOrActive && saved && <span style={{ color: 'var(--good)' }}>Saved ✓</span>}
+                {isOrActive && !saved && (
+                  <button className="btn btn-secondary" onClick={activateOpenRouter}>Save model</button>
+                )}
+                <button className="btn btn-secondary" onClick={handleDisconnectOpenRouter}>Disconnect</button>
               </div>
             </div>
-          ) : provider === 'claude' ? (
-            <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
-              <strong>Pay-as-you-go.</strong> To get your API key:
-              <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
-                <li>Go to <a href="https://console.anthropic.com/settings/api-keys" target="_blank" rel="noreferrer">console.anthropic.com/settings/api-keys</a></li>
-                <li>Click <strong>Create Key</strong></li>
-                <li>Give it a name (e.g. <em>food-tracker</em>) and copy the key (starts with <code>sk-ant-</code>)</li>
-                <li>Paste it above and click <strong>Save</strong></li>
-              </ol>
-              Cost is minimal: Claude Haiku costs ~$0.0001 per nutrition estimate.
-              Your key is stored only in your browser — never sent to any server other than Anthropic.
-              <div style={{marginTop: '0.4rem'}}>
-                <button
-                  className="btn btn-secondary"
-                  style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
-                  onClick={async () => {
-                    try {
-                      const text = await navigator.clipboard.readText()
-                      if (text.startsWith('sk-ant-')) {
-                        setApiKeyState(text.trim())
-                      } else {
-                        alert('Clipboard does not contain an Anthropic key (should start with sk-ant-)')
-                      }
-                    } catch {
-                      alert('Could not read clipboard. Paste the key manually.')
-                    }
-                  }}
-                >
-                  📋 Paste from clipboard
-                </button>
-              </div>
+          ) : (
+            <div style={{ marginTop: '0.75rem' }}>
+              <p className="muted" style={{ fontSize: '0.9rem' }}>
+                No manual key needed — connect once with your OpenRouter account.
+                You control your credit limits and can revoke access anytime from <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer">openrouter.ai</a>.
+              </p>
+              <button className="btn" onClick={() => openrouterAuth.startAuth()}>
+                Connect with OpenRouter →
+              </button>
             </div>
-          ) : null}
+          )}
         </div>
-        <div className="field">
-          <label>Model</label>
-          <input
-            value={model}
-            onChange={e => setModelState(e.target.value)}
-            placeholder={providerInfo.defaultModel}
-          />
-        </div>
-        <div className="flex gap-8 items-center">
-          <button className="btn" onClick={saveSettings}>Save</button>
-          {saved && <span style={{ color: 'var(--good)' }}>Saved ✓</span>}
-        </div>
+
+        {/* Manual API key toggle */}
+        <button
+          className="btn btn-secondary"
+          style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}
+          onClick={() => setShowManual(s => !s)}
+        >
+          {showManual ? '▾' : '▸'} Use a manual API key instead
+        </button>
+
+        {showManual && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <div className="field">
+              <label>Provider</label>
+              <select value={manualProvider} onChange={e => handleManualProviderChange(e.target.value)}>
+                {Object.entries(llm.PROVIDERS).filter(([k]) => k !== 'openrouter').map(([key, p]) => (
+                  <option key={key} value={key}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>API key</label>
+              <input
+                type="password"
+                placeholder={manualProviderInfo.keyPlaceholder}
+                value={apiKey}
+                onChange={e => setApiKeyState(e.target.value)}
+                autoComplete="off"
+              />
+              {manualProvider === 'github' ? (
+                <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
+                  <strong>Free — no billing required.</strong> To get your token:
+                  <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
+                    <li>Go to <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a></li>
+                    <li>Give it any name (e.g. <em>food-tracker</em>)</li>
+                    <li>Under <strong>Account permissions</strong> → <strong>Models</strong> → set to <strong>Read-only</strong></li>
+                    <li>Click <strong>Generate token</strong>, copy it, paste above</li>
+                  </ol>
+                  Rate limits: ~150 low-tier requests/day (more than enough for food logging).
+                </div>
+              ) : manualProvider === 'openai' ? (
+                <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
+                  <strong>Pay-as-you-go.</strong> ~$0.00015 per estimate with gpt-4o-mini.{' '}
+                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">Get your key →</a>
+                  <div style={{marginTop: '0.4rem'}}>
+                    <button className="btn btn-secondary" style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText()
+                          if (text.startsWith('sk-')) setApiKeyState(text.trim())
+                          else alert('Clipboard does not contain an OpenAI key (should start with sk-)')
+                        } catch { alert('Could not read clipboard. Paste the key manually.') }
+                      }}>📋 Paste from clipboard</button>
+                  </div>
+                </div>
+              ) : manualProvider === 'claude' ? (
+                <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
+                  <strong>Pay-as-you-go.</strong> ~$0.0001 per estimate with Claude Haiku.{' '}
+                  <a href="https://console.anthropic.com/settings/api-keys" target="_blank" rel="noreferrer">Get your key →</a>
+                  <div style={{marginTop: '0.4rem'}}>
+                    <button className="btn btn-secondary" style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText()
+                          if (text.startsWith('sk-ant-')) setApiKeyState(text.trim())
+                          else alert('Clipboard does not contain an Anthropic key (should start with sk-ant-)')
+                        } catch { alert('Could not read clipboard. Paste the key manually.') }
+                      }}>📋 Paste from clipboard</button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="field">
+              <label>Model</label>
+              <input
+                value={model}
+                onChange={e => setModelState(e.target.value)}
+                placeholder={manualProviderInfo.defaultModel}
+              />
+            </div>
+            <div className="flex gap-8 items-center">
+              <button className="btn" onClick={saveManualSettings}>Save</button>
+              {saved && !isOrActive && <span style={{ color: 'var(--good)' }}>Saved ✓</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card">
