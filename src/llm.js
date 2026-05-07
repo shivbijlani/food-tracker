@@ -11,8 +11,41 @@ const GITHUB_KEY_STORAGE = 'food-tracker-github-key'
 const GITHUB_MODEL_STORAGE = 'food-tracker-github-model'
 const OPENROUTER_MODEL_STORAGE = 'food-tracker-openrouter-model'
 
+// Dynamically fetches free model IDs from OpenRouter's public catalog.
+// Caches the result for 1 hour so we don't hit the API on every request.
+let _freeModelsCache = null
+let _freeModelsCacheTime = 0
+const FREE_MODELS_TTL = 60 * 60 * 1000 // 1 hour
+
+async function fetchFreeModels() {
+  if (_freeModelsCache && Date.now() - _freeModelsCacheTime < FREE_MODELS_TTL) {
+    return _freeModelsCache
+  }
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models')
+    if (!res.ok) return _freeModelsCache || []
+    const { data } = await res.json()
+    // Filter to free models (prompt and completion both $0), prefer those with
+    // text output and larger context. Sort by context length descending so
+    // higher-quality models are tried first.
+    const free = data
+      .filter(m => m.pricing?.prompt === '0' && m.pricing?.completion === '0'
+        && m.id.endsWith(':free')
+        && m.architecture?.output_modalities?.includes('text'))
+      .sort((a, b) => (b.top_provider?.context_length || 0) - (a.top_provider?.context_length || 0))
+      .map(m => m.id)
+    if (free.length > 0) {
+      _freeModelsCache = free
+      _freeModelsCacheTime = Date.now()
+    }
+    return free
+  } catch {
+    return _freeModelsCache || []
+  }
+}
+
 export const PROVIDERS = {
-  openrouter: { label: 'OpenRouter', defaultModel: 'openrouter/auto:free', oauth: true },
+  openrouter: { label: 'OpenRouter', defaultModel: 'z-ai/glm-4.5-air:free', oauth: true },
   github: { label: 'GitHub Models (free)', defaultModel: 'openai/gpt-4o-mini', keyPlaceholder: 'github_pat_… or ghp_…', keyUrl: 'https://github.com/settings/tokens' },
   openai: { label: 'OpenAI', defaultModel: 'gpt-4o-mini', keyPlaceholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
   claude: { label: 'Anthropic Claude', defaultModel: 'claude-haiku-4-5', keyPlaceholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/api-keys' },
@@ -78,7 +111,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   const provider = getProvider()
   const apiKey = getApiKey(provider)
   if (!apiKey) {
-    if (provider === 'openrouter') throw new Error('OpenRouter not connected. Connect in Settings → LLM.')
+    if (provider === 'openrouter') throw new Error('OpenRouter not connected. Connect in Settings.')
     throw new Error(`No ${PROVIDERS[provider].label} API key configured. Add one in Settings.`)
   }
 
@@ -93,6 +126,15 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
   let res
   if (provider === 'openrouter') {
+    // For free models, dynamically discover fallbacks from OpenRouter's catalog
+    // so we auto-route around rate-limited providers. Max 3 models per API limit.
+    let fallbacks
+    if (model.endsWith(':free')) {
+      const freeModels = await fetchFreeModels()
+      fallbacks = [model, ...freeModels.filter(m => m !== model)].slice(0, 3)
+    } else {
+      fallbacks = [model]
+    }
     res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -102,7 +144,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
         'X-Title': 'Food Tracker',
       },
       body: JSON.stringify({
-        model,
+        models: fallbacks,
         messages: [
           { role: 'system', content: systemContent },
           { role: 'user', content: foodDescription },

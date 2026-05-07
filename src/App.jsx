@@ -16,7 +16,6 @@ const TABS = [
   { id: 'log', label: 'Log' },
   { id: 'recipes', label: 'Recipes' },
   { id: 'goals', label: 'Goals' },
-  { id: 'settings', label: 'Settings' },
 ]
 
 const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
@@ -224,7 +223,6 @@ export default function App() {
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
-      {tab === 'settings' && <SettingsView folderName={folderName} storageProvider={storageProvider} />}
     </div>
   )
 }
@@ -502,7 +500,7 @@ function RecipesView({ recipes, onSave }) {
     <>
       <div className="card">
         <h2>Recipes ({recipes.length})</h2>
-        <p className="muted">Per-serving nutrition for homemade items. Mention them by name when logging meals to help the LLM estimate accurately.</p>
+        <p className="muted">Per-serving nutrition for homemade items. Mention them by name when logging meals for accurate estimates.</p>
         {recipes.length === 0 ? (
           <div className="empty">No recipes yet.</div>
         ) : (
@@ -682,7 +680,7 @@ function MigrateStorageCard({ storageProvider, folderName }) {
   )
 }
 
-function SettingsView({ folderName, storageProvider }) {
+export function SettingsView({ folderName, storageProvider, mode, setMode }) {
   const [orConnected, setOrConnected] = useState(openrouterAuth.isConnected())
   const [orModel, setOrModel] = useState(() => llm.getModel('openrouter'))
   const [activeProvider, setActiveProvider] = useState(llm.getProvider())
@@ -736,10 +734,31 @@ function SettingsView({ folderName, storageProvider }) {
 
   return (
     <>
+      {setMode && (
+        <div className="card">
+          <h2>Mode</h2>
+          <div className="mode-pill" style={{ display: 'inline-flex' }}>
+            <button
+              className={`mode-pill-btn ${mode === 'simple' ? 'active' : ''}`}
+              onClick={() => setMode('simple')}
+            >Simple</button>
+            <button
+              className={`mode-pill-btn ${mode === 'advanced' ? 'active' : ''}`}
+              onClick={() => setMode('advanced')}
+            >Advanced</button>
+          </div>
+          <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+            {mode === 'simple'
+              ? 'Simple: protein-only tracking with success/failure systems'
+              : 'Advanced: full macro tracking (calories, protein, calcium, omega-3, veg)'}
+          </p>
+        </div>
+      )}
+
       <MigrateStorageCard storageProvider={storageProvider} folderName={folderName} />
 
       <div className="card">
-        <h2>LLM for Nutrition Estimation</h2>
+        <h2>Nutrition Estimation</h2>
 
         {/* OpenRouter OAuth option */}
         <div className={`llm-option-card${isOrActive ? ' llm-option-active' : ''}`}>
@@ -751,7 +770,7 @@ function SettingsView({ folderName, storageProvider }) {
                 {!orConnected && <span className="llm-badge-recommended">Recommended</span>}
                 {isOrActive && <span className="llm-badge-active">✓ Active</span>}
               </div>
-              <div className="llm-option-tagline">Sign in once — access GPT-4o, Claude, Gemini and 400+ models</div>
+              <div className="llm-option-tagline">Sign in once — works automatically with free AI models</div>
             </div>
           </div>
 
@@ -765,8 +784,7 @@ function SettingsView({ folderName, storageProvider }) {
                   placeholder={llm.PROVIDERS.openrouter.defaultModel}
                 />
                 <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                  Free: <code>meta-llama/llama-3.3-70b-instruct:free</code> · <code>openai/gpt-oss-120b:free</code><br/>
-                  Paid: <code>openai/gpt-4o-mini</code> · <code>anthropic/claude-haiku-4-5</code>
+                  Leave blank for automatic (free). Or enter a specific model from <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">openrouter.ai/models</a>.
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>

@@ -58,6 +58,52 @@ function currentWeekKey() {
   return sun.toISOString().slice(0, 10)
 }
 
+// Tiny markdown renderer — handles headers (# / ## / ###), bullets (- / *),
+// bold (**…**), and paragraphs. Sufficient for systems.md content.
+function renderInline(text) {
+  const parts = []
+  const re = /\*\*([^*]+)\*\*/g
+  let last = 0, m, idx = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    parts.push(<strong key={`b${idx++}`}>{m[1]}</strong>)
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
+function MarkdownView({ text }) {
+  const lines = text.split(/\r?\n/)
+  const blocks = []
+  let bullets = null
+  const flushBullets = () => {
+    if (bullets) { blocks.push(<ul key={`u${blocks.length}`}>{bullets}</ul>); bullets = null }
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^\s*$/.test(line)) { flushBullets(); continue }
+    const h = line.match(/^(#{1,6})\s+(.*)$/)
+    if (h) {
+      flushBullets()
+      const level = h[1].length
+      const Tag = `h${Math.min(level + 1, 6)}`
+      blocks.push(<Tag key={`h${blocks.length}`}>{renderInline(h[2])}</Tag>)
+      continue
+    }
+    const li = line.match(/^\s*[-*]\s+(.*)$/)
+    if (li) {
+      if (!bullets) bullets = []
+      bullets.push(<li key={`l${i}`}>{renderInline(li[1])}</li>)
+      continue
+    }
+    flushBullets()
+    blocks.push(<p key={`p${blocks.length}`}>{renderInline(line)}</p>)
+  }
+  flushBullets()
+  return <div className="systems-content">{blocks}</div>
+}
+
 export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider }) {  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
@@ -229,7 +275,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
         {systemsOpen && (
           <div style={{ marginTop: 12 }}>
             {systemsText.trim() ? (
-              <pre className="systems-content">{systemsText}</pre>
+              <MarkdownView text={systemsText} />
             ) : (
               <div className="muted">
                 No systems defined yet. Add your success and failure systems to <code>systems.md</code> in your folder.
@@ -340,7 +386,7 @@ function AddEntrySimple({ onAdd, defaultDate }) {
           />
         </div>
         <button className="btn btn-secondary" onClick={estimate} disabled={busy || !meal.trim()} style={{ marginBottom: 0 }}>
-          {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate with LLM'}
+          {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate'}
         </button>
       </div>
       {err && <div className="banner error">{err}</div>}
