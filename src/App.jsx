@@ -777,27 +777,32 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
 
           {orConnected ? (
             <div style={{ marginTop: '0.75rem' }}>
-              <div className="field">
-                <label>Model</label>
-                <input
-                  value={orModel}
-                  onChange={e => setOrModel(e.target.value)}
-                  placeholder={llm.PROVIDERS.openrouter.defaultModel}
-                />
-                <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                  Leave blank for automatic (free). Or enter a specific model from <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">openrouter.ai/models</a>.
-                </div>
-              </div>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 {!isOrActive && (
                   <button className="btn" onClick={activateOpenRouter}>Use OpenRouter</button>
                 )}
                 {isOrActive && saved && <span style={{ color: 'var(--good)' }}>Saved ✓</span>}
+                <button className="btn btn-secondary" onClick={handleDisconnectOpenRouter}>Disconnect</button>
+              </div>
+              <details style={{ marginTop: '0.75rem' }}>
+                <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  Advanced: choose a specific model
+                </summary>
+                <div className="field" style={{ marginTop: '0.5rem' }}>
+                  <label>Model</label>
+                  <input
+                    value={orModel}
+                    onChange={e => setOrModel(e.target.value)}
+                    placeholder={llm.PROVIDERS.openrouter.defaultModel}
+                  />
+                  <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                    Leave blank for automatic (free). Or enter a specific model from <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">openrouter.ai/models</a>.
+                  </div>
+                </div>
                 {isOrActive && !saved && (
                   <button className="btn btn-secondary" onClick={activateOpenRouter}>Save model</button>
                 )}
-                <button className="btn btn-secondary" onClick={handleDisconnectOpenRouter}>Disconnect</button>
-              </div>
+              </details>
             </div>
           ) : (
             <div style={{ marginTop: '0.75rem' }}>
