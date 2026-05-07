@@ -39,6 +39,25 @@ export async function restoreFiles(provider, payload) {
   }
 }
 
+/**
+ * Decide whether copying `payload` onto `target` is safe.
+ * Safe if the target has no files, or the payload is empty (nothing to copy).
+ * Otherwise refuse to avoid silently overwriting remote data (e.g. logs from
+ * another device).
+ */
+export async function checkSafeToCopy(target, payload) {
+  const payloadHasData = Object.keys(payload).length > 0
+  if (!payloadHasData) return { safe: true }
+  const existing = await target.listFiles()
+  if (existing.length === 0) return { safe: true }
+  return {
+    safe: false,
+    error: `Target already contains data (${existing.length} file${existing.length === 1 ? '' : 's'}). ` +
+      `To prevent overwriting data from another device, automatic merging is disabled. ` +
+      `Either start fresh on the target, or clear it first, then try again.`,
+  }
+}
+
 export function hasPendingMigration() {
   return !!sessionStorage.getItem(MIGRATION_KEY)
 }
@@ -76,6 +95,8 @@ export async function migrate(fromProvider, toId, opts = {}) {
 
   // FSA synchronous path — handle already picked above
   if (fsaTarget) {
+    const safety = await checkSafeToCopy(fsaTarget, payload)
+    if (!safety.safe) return { ok: false, error: safety.error }
     await restoreFiles(fsaTarget, payload)
     setProvider(fsaTarget)
     localStorage.setItem('storage-provider', toId)
@@ -98,6 +119,11 @@ export async function migrate(fromProvider, toId, opts = {}) {
     const ok = await target.init()
     if (ok && await target.isReady()) {
       // No redirect happened (already authed) — finish migration now
+      const safety = await checkSafeToCopy(target, payload)
+      if (!safety.safe) {
+        sessionStorage.removeItem(MIGRATION_KEY)
+        return { ok: false, error: safety.error }
+      }
       await restoreFiles(target, payload)
       sessionStorage.removeItem(MIGRATION_KEY)
       setProvider(target)
@@ -114,6 +140,8 @@ export async function migrate(fromProvider, toId, opts = {}) {
   if (!ok || !(await target.isReady())) {
     return { ok: false, error: 'Failed to initialize target storage' }
   }
+  const safety = await checkSafeToCopy(target, payload)
+  if (!safety.safe) return { ok: false, error: safety.error }
   await restoreFiles(target, payload)
   setProvider(target)
   localStorage.setItem('storage-provider', toId)
@@ -124,7 +152,8 @@ export async function migrate(fromProvider, toId, opts = {}) {
 /**
  * Called at app startup. If we're returning from an OAuth redirect with a
  * pending migration, complete it. Returns the resulting provider id, or null
- * if no migration was pending.
+ * if no migration was pending. Returns `{ error }` if the target turned out
+ * to already contain data (we refuse to overwrite).
  */
 export async function resumePendingMigration() {
   const pending = readPendingMigration()
@@ -135,6 +164,16 @@ export async function resumePendingMigration() {
   if (!ok || !(await target.isReady())) {
     return null // OAuth might still be pending or failed
   }
+  const safety = await checkSafeToCopy(target, pending.payload)
+  if (!safety.safe) {
+    // Target has data from another device — don't overwrite it. Drop the
+    // pending payload but switch the user to the target so they can see
+    // their existing remote data.
+    clearPendingMigration()
+    setProvider(target)
+    localStorage.setItem('storage-provider', pending.toId)
+    return { toId: pending.toId, error: safety.error }
+  }
   await restoreFiles(target, pending.payload)
   setProvider(target)
   localStorage.setItem('storage-provider', pending.toId)
@@ -143,5 +182,5 @@ export async function resumePendingMigration() {
     await src.clear()
   }
   clearPendingMigration()
-  return pending.toId
+  return { toId: pending.toId }
 }

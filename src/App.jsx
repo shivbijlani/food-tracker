@@ -99,9 +99,10 @@ export default function App() {
       try {
         // 1. If returning from OAuth redirect with a pending migration, finish it
         if (hasPendingMigration()) {
-          const migratedTo = await resumePendingMigration()
-          if (migratedTo) {
-            await handleStorageReady(migratedTo)
+          const result = await resumePendingMigration()
+          if (result) {
+            await handleStorageReady(result.toId)
+            if (result.error) setError(result.error)
             setLoading(false)
             return
           }
