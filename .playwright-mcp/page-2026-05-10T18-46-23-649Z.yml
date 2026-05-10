@@ -1,0 +1,83 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "🥗 Food Tracker 📁 Browser Storage Idle" [level=1] [ref=e5]:
+      - text: 🥗 Food Tracker
+      - generic "Storage location" [ref=e6]: 📁 Browser Storage
+      - 'generic "Sync: Idle" [ref=e7]':
+        - generic [ref=e9]: Idle
+    - button "Settings" [ref=e10] [cursor=pointer]: ⚙
+  - navigation [ref=e11]:
+    - button "Today" [ref=e12] [cursor=pointer]
+    - button "Log" [active] [ref=e13] [cursor=pointer]
+    - button "Recipes" [ref=e14] [cursor=pointer]
+    - button "Goals" [ref=e15] [cursor=pointer]
+  - generic [ref=e83]:
+    - heading "All Entries (3)" [level=2] [ref=e84]
+    - generic [ref=e85]:
+      - generic [ref=e86]:
+        - heading "2026-05-10" [level=3] [ref=e87]
+        - generic [ref=e88]: 900 kcal · 53g pro · 200mg Ca · 2 veg
+      - generic [ref=e89]:
+        - generic [ref=e90]:
+          - strong [ref=e92]: Breakfast
+          - generic [ref=e93]:
+            - text: 2026-05-10
+            - button "🗑" [ref=e94] [cursor=pointer]
+        - generic [ref=e95]: 2 eggs, toast, OJ
+        - generic [ref=e96]:
+          - generic [ref=e97]:
+            - strong [ref=e98]: "380"
+            - text: kcal
+          - generic [ref=e99]:
+            - strong [ref=e100]: "18"
+            - text: g protein
+          - generic [ref=e101]:
+            - strong [ref=e102]: "80"
+            - text: mg Ca
+          - generic [ref=e103]:
+            - strong [ref=e104]: "0"
+            - text: veg
+      - generic [ref=e105]:
+        - generic [ref=e106]:
+          - strong [ref=e108]: Lunch
+          - generic [ref=e109]:
+            - text: 2026-05-10
+            - button "🗑" [ref=e110] [cursor=pointer]
+        - generic [ref=e111]: Chicken salad
+        - generic [ref=e112]:
+          - generic [ref=e113]:
+            - strong [ref=e114]: "520"
+            - text: kcal
+          - generic [ref=e115]:
+            - strong [ref=e116]: "35"
+            - text: g protein
+          - generic [ref=e117]:
+            - strong [ref=e118]: "120"
+            - text: mg Ca
+          - generic [ref=e119]:
+            - strong [ref=e120]: "2"
+            - text: veg
+    - generic [ref=e121]:
+      - generic [ref=e122]:
+        - heading "2026-04-15" [level=3] [ref=e123]
+        - generic [ref=e124]: 620 kcal · 40g pro · 200mg Ca · 1.5 veg
+      - generic [ref=e125]:
+        - generic [ref=e126]:
+          - strong [ref=e128]: Dinner
+          - generic [ref=e129]:
+            - text: 2026-04-15
+            - button "🗑" [ref=e130] [cursor=pointer]
+        - generic [ref=e131]: Salmon, rice, broccoli
+        - generic [ref=e132]:
+          - generic [ref=e133]:
+            - strong [ref=e134]: "620"
+            - text: kcal
+          - generic [ref=e135]:
+            - strong [ref=e136]: "40"
+            - text: g protein
+          - generic [ref=e137]:
+            - strong [ref=e138]: "200"
+            - text: mg Ca
+          - generic [ref=e139]:
+            - strong [ref=e140]: "1.5"
+            - text: veg

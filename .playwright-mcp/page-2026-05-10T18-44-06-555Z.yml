@@ -1,0 +1,51 @@
+- generic [ref=e3]:
+  - banner [ref=e5]:
+    - heading "🥗 Food Tracker 📁 Browser Storage Idle" [level=1] [ref=e6]:
+      - text: 🥗 Food Tracker
+      - generic "Storage location" [ref=e7]: 📁 Browser Storage
+      - 'generic "Sync: Idle" [ref=e8]':
+        - generic [ref=e10]: Idle
+    - button "Settings" [ref=e11] [cursor=pointer]: ⚙
+  - navigation [ref=e12]:
+    - button "Today" [ref=e13] [cursor=pointer]
+    - button "Log" [ref=e14] [cursor=pointer]
+    - button "Recipes" [ref=e15] [cursor=pointer]
+    - button "Goals" [ref=e16] [cursor=pointer]
+  - generic [ref=e17]:
+    - heading "Today's Progress" [level=2] [ref=e18]
+    - generic [ref=e19]:
+      - generic [ref=e20]: Calories
+      - generic [ref=e22]: 0 / 2000 kcal
+    - generic [ref=e23]:
+      - generic [ref=e24]: Protein
+      - generic [ref=e26]: 0 / 120 g
+    - generic [ref=e27]:
+      - generic [ref=e28]: Calcium
+      - generic [ref=e30]: 0 mg
+    - generic [ref=e31]:
+      - generic [ref=e32]: Vegetables
+      - generic [ref=e34]: 0 srv
+    - generic [ref=e35]:
+      - text: "Omega-3 today:"
+      - strong [ref=e36]: ✗ Not yet
+  - generic [ref=e37]:
+    - heading "Log a meal" [level=2] [ref=e38]
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]: Date
+        - textbox [ref=e42]: 2026-05-10
+      - generic [ref=e43]:
+        - generic [ref=e44]: Meal
+        - combobox [ref=e45]:
+          - option "Breakfast" [selected]
+          - option "Lunch"
+          - option "Dinner"
+          - option "Snack"
+    - generic [ref=e46]:
+      - generic [ref=e47]: Food description
+      - textbox "e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts" [ref=e48]: 2 eggs scrambled, 1 slice whole wheat toast with butter, 1 cup orange juice
+    - generic [ref=e53]: No GitHub Models (free) API key configured. Add one in Settings.
+    - button "✨ Estimate nutrition" [ref=e49] [cursor=pointer]
+  - generic [ref=e50]:
+    - heading "Today's Entries (0)" [level=2] [ref=e51]
+    - generic [ref=e52]: Nothing logged yet today.

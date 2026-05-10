@@ -1,0 +1,63 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "🥗 Food Tracker 📁 Browser Storage Idle" [level=1] [ref=e5]:
+      - text: 🥗 Food Tracker
+      - generic "Storage location" [ref=e6]: 📁 Browser Storage
+      - 'generic "Sync: Idle" [ref=e7]':
+        - generic [ref=e9]: Idle
+    - button "Settings" [ref=e10] [cursor=pointer]: ⚙
+  - navigation [ref=e11]:
+    - button "Today" [ref=e12] [cursor=pointer]
+    - button "Log" [active] [ref=e13] [cursor=pointer]
+    - button "Recipes" [ref=e14] [cursor=pointer]
+    - button "Goals" [ref=e15] [cursor=pointer]
+  - generic [ref=e208]:
+    - heading "All Entries (2)" [level=2] [ref=e266]
+    - generic [ref=e210]:
+      - generic [ref=e211]:
+        - heading "2026-05-10" [level=3] [ref=e212]
+        - generic [ref=e213]: 380 kcal · 18g pro · 80mg Ca · 0 veg
+      - generic [ref=e214]:
+        - generic [ref=e215]:
+          - strong [ref=e217]: Breakfast
+          - generic [ref=e218]:
+            - text: 2026-05-10
+            - button "🗑" [ref=e219] [cursor=pointer]
+        - generic [ref=e220]: 2 eggs, toast, OJ
+        - generic [ref=e221]:
+          - generic [ref=e222]:
+            - strong [ref=e223]: "380"
+            - text: kcal
+          - generic [ref=e224]:
+            - strong [ref=e225]: "18"
+            - text: g protein
+          - generic [ref=e226]:
+            - strong [ref=e227]: "80"
+            - text: mg Ca
+          - generic [ref=e228]:
+            - strong [ref=e229]: "0"
+            - text: veg
+    - generic [ref=e246]:
+      - generic [ref=e247]:
+        - heading "2026-04-15" [level=3] [ref=e248]
+        - generic [ref=e249]: 620 kcal · 40g pro · 200mg Ca · 1.5 veg
+      - generic [ref=e250]:
+        - generic [ref=e251]:
+          - strong [ref=e253]: Dinner
+          - generic [ref=e254]:
+            - text: 2026-04-15
+            - button "🗑" [ref=e255] [cursor=pointer]
+        - generic [ref=e256]: Salmon, rice, broccoli
+        - generic [ref=e257]:
+          - generic [ref=e258]:
+            - strong [ref=e259]: "620"
+            - text: kcal
+          - generic [ref=e260]:
+            - strong [ref=e261]: "40"
+            - text: g protein
+          - generic [ref=e262]:
+            - strong [ref=e263]: "200"
+            - text: mg Ca
+          - generic [ref=e264]:
+            - strong [ref=e265]: "1.5"
+            - text: veg

@@ -1,0 +1,85 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "🥗 Food Tracker 📁 Browser Storage Idle" [level=1] [ref=e5]:
+      - text: 🥗 Food Tracker
+      - generic "Storage location" [ref=e6]: 📁 Browser Storage
+      - 'generic "Sync: Idle" [ref=e7]':
+        - generic [ref=e9]: Idle
+    - button "Settings" [ref=e10] [cursor=pointer]: ⚙
+  - navigation [ref=e11]:
+    - button "Today" [ref=e12] [cursor=pointer]
+    - button "Log" [ref=e13] [cursor=pointer]
+    - button "Recipes" [ref=e14] [cursor=pointer]
+    - button "Goals" [ref=e15] [cursor=pointer]
+  - generic [ref=e16]:
+    - heading "Today's Progress" [level=2] [ref=e17]
+    - generic [ref=e18]:
+      - generic [ref=e19]: Calories
+      - generic [ref=e21]: 900 / 2000 kcal
+    - generic [ref=e22]:
+      - generic [ref=e23]: Protein
+      - generic [ref=e25]: 53 / 120 g
+    - generic [ref=e26]:
+      - generic [ref=e27]: Calcium
+      - generic [ref=e29]: 200 mg
+    - generic [ref=e30]:
+      - generic [ref=e31]: Vegetables
+      - generic [ref=e33]: 2 srv
+    - generic [ref=e34]:
+      - text: "Omega-3 today:"
+      - strong [ref=e35]: ✗ Not yet
+  - generic [ref=e36]:
+    - heading "Log a meal" [level=2] [ref=e37]
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: Date
+        - textbox [ref=e41]: 2026-05-10
+      - generic [ref=e42]:
+        - generic [ref=e43]: Meal
+        - combobox [ref=e44]:
+          - option "Breakfast" [selected]
+          - option "Lunch"
+          - option "Dinner"
+          - option "Snack"
+    - generic [ref=e45]:
+      - generic [ref=e46]: Food description
+      - textbox "e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts" [ref=e47]
+    - button "✨ Estimate nutrition" [disabled] [ref=e48]
+  - generic [ref=e49]:
+    - heading "Today's Entries (2)" [level=2] [ref=e50]
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - strong [ref=e54]: Breakfast
+        - generic [ref=e55]: 2026-05-10
+      - generic [ref=e56]: 2 eggs, toast, OJ
+      - generic [ref=e57]:
+        - generic [ref=e58]:
+          - strong [ref=e59]: "380"
+          - text: kcal
+        - generic [ref=e60]:
+          - strong [ref=e61]: "18"
+          - text: g protein
+        - generic [ref=e62]:
+          - strong [ref=e63]: "80"
+          - text: mg Ca
+        - generic [ref=e64]:
+          - strong [ref=e65]: "0"
+          - text: veg
+    - generic [ref=e66]:
+      - generic [ref=e67]:
+        - strong [ref=e69]: Lunch
+        - generic [ref=e70]: 2026-05-10
+      - generic [ref=e71]: Chicken salad
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - strong [ref=e74]: "520"
+          - text: kcal
+        - generic [ref=e75]:
+          - strong [ref=e76]: "35"
+          - text: g protein
+        - generic [ref=e77]:
+          - strong [ref=e78]: "120"
+          - text: mg Ca
+        - generic [ref=e79]:
+          - strong [ref=e80]: "2"
+          - text: veg

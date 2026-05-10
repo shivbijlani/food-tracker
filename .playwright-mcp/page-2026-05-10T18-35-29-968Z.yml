@@ -1,0 +1,67 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - heading "📋 Planner" [level=2] [ref=e6]
+    - list [ref=e8]:
+      - listitem [ref=e9]:
+        - button "📄 focus-plan-completed.md" [ref=e10] [cursor=pointer]
+      - listitem [ref=e11]:
+        - button "📄 focus-plan.md" [ref=e12] [cursor=pointer]
+    - button "⚙ Settings Browser only" [active] [ref=e14] [cursor=pointer]:
+      - generic [ref=e15]: ⚙
+      - generic [ref=e16]: Settings
+      - generic "Browser only" [ref=e17]
+    - generic [ref=e53]:
+      - generic [ref=e54]:
+        - heading "Settings" [level=3] [ref=e55]
+        - button "✕" [ref=e56] [cursor=pointer]
+      - generic [ref=e57]:
+        - generic [ref=e58]: Storage
+        - generic [ref=e59]: 🗂️ Browser Storage
+        - generic [ref=e60]: Planner reads and writes here first, so the app stays instant even when cloud backup is offline.
+      - generic [ref=e61]:
+        - generic [ref=e62]: Cloud backup
+        - generic [ref=e63]:
+          - generic [ref=e64]:
+            - generic [ref=e65]: ☁️
+            - generic [ref=e66]:
+              - generic [ref=e67]: OneDrive backup
+              - generic [ref=e68]: Browser only
+          - button "Connect" [ref=e69] [cursor=pointer]
+        - generic [ref=e70]: "Main use case: keep using Browser Storage, then back it up to OneDrive in the background."
+      - group [ref=e71]:
+        - generic "Advanced sync model" [ref=e72] [cursor=pointer]
+  - main [ref=e18]:
+    - generic [ref=e19]:
+      - heading "📋 Focus Plan" [level=1] [ref=e20]
+      - generic [ref=e21]:
+        - heading "▼ Today (0) ⓘ +" [level=2] [ref=e22] [cursor=pointer]:
+          - generic [ref=e23]: ▼
+          - text: Today
+          - generic [ref=e24]: (0)
+          - generic [ref=e25]: ⓘ
+          - button "+" [ref=e26]
+        - table [ref=e28]:
+          - rowgroup [ref=e29]:
+            - row "ID 🎯 Task Work Priority Age" [ref=e30]:
+              - columnheader "ID" [ref=e31]
+              - columnheader "🎯" [ref=e32]
+              - columnheader "Task" [ref=e33]
+              - columnheader "Work Priority" [ref=e34]
+              - columnheader "Age" [ref=e35]
+          - rowgroup
+      - heading "▶ Deferred (0) ⓘ +" [level=2] [ref=e37] [cursor=pointer]:
+        - generic [ref=e38]: ▶
+        - text: Deferred
+        - generic [ref=e39]: (0)
+        - generic [ref=e40]: ⓘ
+        - button "+" [ref=e41]
+      - heading "▶ Work Priorities (0) +" [level=2] [ref=e43] [cursor=pointer]:
+        - generic [ref=e44]: ▶
+        - text: Work Priorities
+        - generic [ref=e45]: (0)
+        - button "+" [ref=e46]
+      - heading "▶ Personal Priorities (0) +" [level=2] [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: ▶
+        - text: Personal Priorities
+        - generic [ref=e50]: (0)
+        - button "+" [ref=e51]

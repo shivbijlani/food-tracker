@@ -1,0 +1,50 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "🥗 Food Tracker 📁 Browser Storage Idle" [level=1] [ref=e5]:
+      - text: 🥗 Food Tracker
+      - generic "Storage location" [ref=e6]: 📁 Browser Storage
+      - 'generic "Sync: Idle" [ref=e7]':
+        - generic [ref=e9]: Idle
+    - button "Settings" [ref=e10] [cursor=pointer]: ⚙
+  - navigation [ref=e11]:
+    - button "Today" [ref=e12] [cursor=pointer]
+    - button "Log" [ref=e13] [cursor=pointer]
+    - button "Recipes" [ref=e14] [cursor=pointer]
+    - button "Goals" [ref=e15] [cursor=pointer]
+  - generic [ref=e16]:
+    - heading "Today's Progress" [level=2] [ref=e17]
+    - generic [ref=e18]:
+      - generic [ref=e19]: Calories
+      - generic [ref=e21]: 0 / 2000 kcal
+    - generic [ref=e22]:
+      - generic [ref=e23]: Protein
+      - generic [ref=e25]: 0 / 120 g
+    - generic [ref=e26]:
+      - generic [ref=e27]: Calcium
+      - generic [ref=e29]: 0 mg
+    - generic [ref=e30]:
+      - generic [ref=e31]: Vegetables
+      - generic [ref=e33]: 0 srv
+    - generic [ref=e34]:
+      - text: "Omega-3 today:"
+      - strong [ref=e35]: ✗ Not yet
+  - generic [ref=e36]:
+    - heading "Log a meal" [level=2] [ref=e37]
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: Date
+        - textbox [ref=e41]: 2026-05-10
+      - generic [ref=e42]:
+        - generic [ref=e43]: Meal
+        - combobox [ref=e44]:
+          - option "Breakfast" [selected]
+          - option "Lunch"
+          - option "Dinner"
+          - option "Snack"
+    - generic [ref=e45]:
+      - generic [ref=e46]: Food description
+      - textbox "e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts" [ref=e47]
+    - button "✨ Estimate nutrition" [disabled] [ref=e48]
+  - generic [ref=e49]:
+    - heading "Today's Entries (0)" [level=2] [ref=e50]
+    - generic [ref=e51]: Nothing logged yet today.

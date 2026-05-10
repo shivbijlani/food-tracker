@@ -106,7 +106,8 @@ export function getEngine() {
  * Register the folder-sync service worker. Call once on app start.
  */
 export async function registerSyncWorker() {
-  return registerServiceWorker('/folder-sync/sw.js', { type: 'module' })
+  const base = (import.meta.env?.BASE_URL || '/').replace(/\/$/, '')
+  return registerServiceWorker(`${base}/folder-sync/sw.js`, { type: 'module', scope: `${base}/folder-sync/` })
 }
 
 // ---- Backward-compatible thin facade ----
@@ -130,6 +131,11 @@ export const storage = {
       if (!existing) await _engine.writeFile(name, content)
     }
   },
+}
+
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+  window.__storage = storage
+  window.__getEngine = getEngine
 }
 
 const GOALS_COLS = ['Nutrient','Target','Notes']
