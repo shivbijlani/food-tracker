@@ -1,0 +1,32 @@
+{
+  "name": "@shivbijlani/folder-sync",
+  "version": "0.0.1",
+  "description": "Local-first folder sync engine with pluggable cloud providers and a service-worker backend.",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./sw": "./src/sw.js",
+    "./adapters/browser-storage": "./src/adapters/browserStorage.js",
+    "./adapters/fsa": "./src/adapters/fsa.js",
+    "./providers/google-drive": "./src/providers/googleDrive.js",
+    "./providers/onedrive": "./src/providers/oneDrive.js"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build-sw.mjs"
+  },
+  "keywords": [
+    "sync",
+    "service-worker",
+    "google-drive",
+    "onedrive",
+    "local-first"
+  ],
+  "author": "shivbijlani",
+  "license": "MIT"
+}

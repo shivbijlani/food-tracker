@@ -1,158 +1,154 @@
 /**
- * Storage abstraction layer supporting:
- * - FSA (File System Access API) for desktop Chrome/Edge
- * - OneDrive via Microsoft Graph API
- * - Google Drive via Drive API v3
+ * Storage facade — backed by @shivbijlani/folder-sync.
+ *
+ * Exposes the same `storage` shape the app has always used (readFile / writeFile /
+ * listFiles / scaffold / getFolderName), so consumers don't need to think about
+ * the underlying sync engine.
+ *
+ * Cloud (OneDrive / Google Drive) is no longer a *primary* storage choice — it's
+ * a sync target. The primary is always local (Browser Storage or Local Folder).
+ *
+ * Use `engine` directly for: subscribe(), connect(), disconnect(), syncNow(),
+ * listProviders().
  */
 
-// Storage provider types
-export const PROVIDERS = {
-  LOCAL_STORAGE: 'local-storage',
+import {
+  createSyncEngine,
+  registerServiceWorker,
+  browserStorageAdapter,
+  fsaAdapter,
+  oneDriveProvider,
+  googleDriveProvider,
+} from '@shivbijlani/folder-sync'
+import { scaffoldFile } from './mdyaml.js'
+
+// ---- Public provider IDs (now: only local primary) ----
+export const PROVIDERS = Object.freeze({
+  LOCAL_STORAGE: 'browser-storage',
   FSA: 'fsa',
-  ONEDRIVE: 'onedrive',
-  GOOGLE_DRIVE: 'google-drive'
+})
+
+export function getAvailableProviders() {
+  const out = [PROVIDERS.LOCAL_STORAGE]
+  if (typeof window !== 'undefined' && window.showDirectoryPicker && window.isSecureContext) {
+    out.push(PROVIDERS.FSA)
+  }
+  return out
 }
 
-// Detect available providers
-export function getAvailableProviders() {
-  const providers = [PROVIDERS.LOCAL_STORAGE]
-  
-  // FSA only available in secure contexts on Chromium browsers
-  if (window.showDirectoryPicker && window.isSecureContext) {
-    providers.push(PROVIDERS.FSA)
+export function getProviderName(id) {
+  switch (id) {
+    case PROVIDERS.LOCAL_STORAGE: return 'Browser Storage'
+    case PROVIDERS.FSA: return 'Local Folder'
+    case 'onedrive': return 'OneDrive'
+    case 'google-drive': return 'Google Drive'
+    default: return id
   }
-  
-  // Cloud providers always available (need internet)
-  providers.push(PROVIDERS.ONEDRIVE, PROVIDERS.GOOGLE_DRIVE)
-  
+}
+
+// ---- Cloud provider client IDs ----
+// OneDrive: pre-registered Azure app id (same one the project used before).
+// Google: requires a client id; expose via Vite env, fall back to disabled if absent.
+const ONEDRIVE_CLIENT_ID = import.meta.env?.VITE_ONEDRIVE_CLIENT_ID
+  || '94f25f67-e08b-415e-b1aa-4159093d401d'
+const GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || ''
+
+const PRIMARY_KEY = 'storage-primary'
+
+function makeAdapter(id) {
+  if (id === PROVIDERS.FSA) return fsaAdapter()
+  return browserStorageAdapter({ prefix: 'ft-file:' })
+}
+
+function makeProviders() {
+  const providers = [oneDriveProvider({ clientId: ONEDRIVE_CLIENT_ID })]
+  if (GOOGLE_CLIENT_ID) {
+    providers.push(googleDriveProvider({ clientId: GOOGLE_CLIENT_ID }))
+  }
   return providers
 }
 
-// Get friendly names for providers
-export function getProviderName(provider) {
-  switch (provider) {
-    case PROVIDERS.LOCAL_STORAGE: return 'Browser Storage'
-    case PROVIDERS.FSA: return 'Local Folder'
-    case PROVIDERS.ONEDRIVE: return 'OneDrive'
-    case PROVIDERS.GOOGLE_DRIVE: return 'Google Drive'
-    default: return provider
+// ---- Engine singleton ----
+let _engine = null
+let _primaryId = null
+
+export function getPrimaryId() {
+  return _primaryId
+}
+
+export async function setPrimary(id) {
+  if (!getAvailableProviders().includes(id)) {
+    throw new Error(`Primary storage not available: ${id}`)
   }
+  localStorage.setItem(PRIMARY_KEY, id)
+  _primaryId = id
+  _engine = createSyncEngine({
+    localAdapter: makeAdapter(id),
+    providers: makeProviders(),
+  })
+  await _engine.initLocal()
 }
 
-// Storage interface that all providers must implement
-class StorageProvider {
-  /**
-   * Initialize/authenticate the provider
-   * @returns {Promise<boolean>} success
-   */
-  async init() { throw new Error('Not implemented') }
-  
-  /**
-   * Check if provider is ready to use
-   * @returns {Promise<boolean>}
-   */
-  async isReady() { throw new Error('Not implemented') }
-  
-  /**
-   * Get folder display name for UI
-   * @returns {Promise<string>}
-   */
-  async getFolderName() { throw new Error('Not implemented') }
-  
-  /**
-   * Read file contents
-   * @param {string} filename 
-   * @returns {Promise<string>}
-   */
-  async readFile(filename) { throw new Error('Not implemented') }
-  
-  /**
-   * Write file contents
-   * @param {string} filename 
-   * @param {string} contents 
-   * @returns {Promise<void>}
-   */
-  async writeFile(filename, contents) { throw new Error('Not implemented') }
-  
-  /**
-   * Delete file
-   * @param {string} filename 
-   * @returns {Promise<void>}
-   */
-  async deleteFile(filename) { throw new Error('Not implemented') }
-  
-  /**
-   * List files in folder
-   * @returns {Promise<string[]>} filenames
-   */
-  async listFiles() { throw new Error('Not implemented') }
-  
-  /**
-   * Create initial scaffold files
-   * @param {boolean} isSimpleMode 
-   * @returns {Promise<void>}
-   */
-  async scaffold(isSimpleMode = false) { throw new Error('Not implemented') }
+export async function initStorage() {
+  const savedId = localStorage.getItem(PRIMARY_KEY) || PROVIDERS.LOCAL_STORAGE
+  const wanted = getAvailableProviders().includes(savedId) ? savedId : PROVIDERS.LOCAL_STORAGE
+  await setPrimary(wanted)
+  // For FSA, the adapter may need a folder pick before it's truly ready.
+  return _engine
 }
 
-// Current provider singleton
-let currentProvider = null
-
-/**
- * Set the active storage provider
- * @param {StorageProvider} provider 
- */
-export function setProvider(provider) {
-  currentProvider = provider
+export function getEngine() {
+  if (!_engine) throw new Error('Storage not initialised — call initStorage() first.')
+  return _engine
 }
 
 /**
- * Get the current storage provider
- * @returns {StorageProvider}
+ * Register the folder-sync service worker. Call once on app start.
  */
-export function getProvider() {
-  if (!currentProvider) {
-    throw new Error('No storage provider configured')
-  }
-  return currentProvider
+export async function registerSyncWorker() {
+  return registerServiceWorker('/folder-sync/sw.js', { type: 'module' })
 }
 
-/**
- * Storage API that delegates to current provider
- */
+// ---- Backward-compatible thin facade ----
 export const storage = {
-  async init() {
-    return currentProvider?.init()
-  },
-  
-  async isReady() {
-    return currentProvider?.isReady() || false
-  },
-  
-  async getFolderName() {
-    return currentProvider?.getFolderName() || 'Unknown'
-  },
-  
-  async readFile(filename) {
-    return currentProvider?.readFile(filename)
-  },
-  
-  async writeFile(filename, contents) {
-    return currentProvider?.writeFile(filename, contents)
-  },
-  
-  async deleteFile(filename) {
-    return currentProvider?.deleteFile(filename)
-  },
-  
-  async listFiles() {
-    return currentProvider?.listFiles() || []
-  },
-  
+  async init() { /* no-op — initStorage() is the new entry point */ return true },
+  async isReady() { return _engine != null },
+  async getFolderName() { return _engine ? _engine.getFolderName() : 'Browser Storage' },
+  async readFile(name) { return _engine.readFile(name) },
+  async writeFile(name, contents) { return _engine.writeFile(name, contents) },
+  async deleteFile(name) { return _engine.deleteFile(name) },
+  async listFiles() { return _engine.listFiles() },
+
+  /**
+   * Create initial scaffold files if they don't exist. Mode-aware.
+   * Lives here (not in adapters) because scaffold content is app-specific.
+   */
   async scaffold(isSimpleMode = false) {
-    return currentProvider?.scaffold(isSimpleMode)
-  }
+    const files = isSimpleMode ? scaffoldSimple() : scaffoldAdvanced()
+    for (const [name, content] of files) {
+      const existing = await _engine.readFile(name)
+      if (!existing) await _engine.writeFile(name, content)
+    }
+  },
 }
 
-// Export the interface for provider implementations
-export { StorageProvider }
+const GOALS_COLS = ['Nutrient','Target','Notes']
+const RECIPE_COLS = ['Recipe','Servings','Calories','Protein (g)','Calcium (mg)','Notes']
+
+function scaffoldAdvanced() {
+  const goalsContent = scaffoldFile({ kind: 'goals', headers: GOALS_COLS, title: 'Goals' })
+    .replace(/\| Nutrient \| Target \| Notes \|\n\|[^\n]+\|\n/, m => m + '| Calories | 2000 | Daily target |\n| Protein | 120g | Daily target |\n')
+  return [
+    ['goals.md', goalsContent],
+    ['recipes.md', scaffoldFile({ kind: 'recipes', headers: RECIPE_COLS, title: 'Recipes' })],
+  ]
+}
+
+function scaffoldSimple() {
+  const goalsContent = scaffoldFile({ kind: 'goals', headers: GOALS_COLS, title: 'Goals' })
+    .replace(/\| Nutrient \| Target \| Notes \|\n\|[^\n]+\|\n/, m => m + '| Protein | 120g | Daily target |\n')
+  return [
+    ['goals.md', goalsContent],
+    ['systems.md', `---\nschemaVersion: 1\nkind: notes\n---\n\n# Systems\n\nDaily protein tracking with success/failure framework.\n`],
+  ]
+}
