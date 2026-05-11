@@ -5,6 +5,7 @@ import {
 } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
+import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
@@ -189,7 +190,11 @@ export default function App() {
   }
 
   const addEntry = async (entry) => {
-    await saveLog([entry, ...logEntries])
+    await saveLog(mergeEntry(logEntries, entry, 'advanced'))
+  }
+
+  const updateEntry = async (idx, entry) => {
+    await saveLog(updateEntryAt(logEntries, idx, entry))
   }
 
   const deleteEntry = async (idx) => {
@@ -237,15 +242,15 @@ export default function App() {
         </div>
       )}
 
-      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntry} recipes={recipes} />}
-      {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} />}
+      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntry} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} />}
+      {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
     </div>
   )
 }
 
-function TodayView({ entries, goals, onAdd, recipes }) {
+function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
   const today = todayStr()
   const todays = entries.filter(e => e.Date === today)
 
@@ -295,7 +300,17 @@ function TodayView({ entries, goals, onAdd, recipes }) {
         <h2>Today's Entries ({todays.length})</h2>
         {todays.length === 0 ? (
           <div className="empty">Nothing logged yet today.</div>
-        ) : todays.map((e, i) => <EntryRow key={i} entry={e} />)}
+        ) : todays.map((e) => {
+          const globalIdx = entries.indexOf(e)
+          return (
+            <EntryRow
+              key={globalIdx}
+              entry={e}
+              onUpdate={(updated) => onUpdate(globalIdx, updated)}
+              onDelete={() => onDelete(globalIdx)}
+            />
+          )
+        })}
       </div>
     </>
   )
@@ -436,14 +451,58 @@ function NumStat({ label, value, onChange, step = '1' }) {
   )
 }
 
-function EntryRow({ entry, onDelete }) {
+function EntryRow({ entry, onDelete, onUpdate }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(entry)
+
+  if (editing) {
+    const set = (k, v) => setDraft(d => ({ ...d, [k]: v }))
+    const save = async () => { await onUpdate(draft); setEditing(false) }
+    const cancel = () => { setDraft(entry); setEditing(false) }
+    return (
+      <div className="entry" style={{ background: 'rgba(0,0,0,0.03)' }}>
+        <div className="entry-header">
+          <select value={draft.Meal || ''} onChange={e => set('Meal', e.target.value)}>
+            <option value="">—</option>
+            {MEALS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <input type="date" value={draft.Date || ''} onChange={e => set('Date', e.target.value)} />
+        </div>
+        <textarea
+          rows={2}
+          value={draft['Food Description'] || ''}
+          onChange={e => set('Food Description', e.target.value)}
+          style={{ width: '100%', marginTop: 6 }}
+        />
+        <div className="entry-stats" style={{ flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          <label>kcal <input type="number" value={draft.Calories || 0} onChange={e => set('Calories', e.target.value)} style={{ width: 70 }} /></label>
+          <label>protein <input type="number" value={draft['Protein (g)'] || 0} onChange={e => set('Protein (g)', e.target.value)} style={{ width: 60 }} /></label>
+          <label>Ca <input type="number" value={draft['Calcium (mg)'] || 0} onChange={e => set('Calcium (mg)', e.target.value)} style={{ width: 60 }} /></label>
+          <label>veg <input type="number" step="0.5" value={draft['Veg Servings'] || 0} onChange={e => set('Veg Servings', e.target.value)} style={{ width: 50 }} /></label>
+          <label>ω-3 <input type="checkbox" checked={draft['Omega-3'] === 'Y'} onChange={e => set('Omega-3', e.target.checked ? 'Y' : '')} /></label>
+        </div>
+        <input
+          placeholder="Notes"
+          value={draft.Notes || ''}
+          onChange={e => set('Notes', e.target.value)}
+          style={{ width: '100%', marginTop: 6 }}
+        />
+        <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+          <button className="btn" onClick={save}>Save</button>
+          <button className="btn btn-secondary" onClick={cancel}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="entry">
       <div className="entry-header">
         <span><strong>{entry.Meal || '—'}</strong></span>
         <span>
           {entry.Date}
-          {onDelete && <button className="icon-btn" title="Delete" onClick={onDelete} style={{ marginLeft: 8 }}>🗑</button>}
+          {onUpdate && <button className="icon-btn" title="Edit" onClick={() => setEditing(true)} style={{ marginLeft: 8 }}>✏️</button>}
+          {onDelete && <button className="icon-btn" title="Delete" onClick={onDelete} style={{ marginLeft: 4 }}>🗑</button>}
         </span>
       </div>
       <div className="entry-desc">{entry['Food Description']}</div>
@@ -458,7 +517,7 @@ function EntryRow({ entry, onDelete }) {
   )
 }
 
-function LogView({ entries, onDelete }) {
+function LogView({ entries, onDelete, onUpdate }) {
   // Group by date
   const byDate = {}
   for (const e of entries) {
@@ -492,7 +551,14 @@ function LogView({ entries, onDelete }) {
             </div>
             {dayEntries.map((e, i) => {
               const globalIdx = entries.indexOf(e)
-              return <EntryRow key={i} entry={e} onDelete={() => onDelete(globalIdx)} />
+              return (
+                <EntryRow
+                  key={i}
+                  entry={e}
+                  onUpdate={onUpdate && ((updated) => onUpdate(globalIdx, updated))}
+                  onDelete={() => onDelete(globalIdx)}
+                />
+              )
             })}
           </div>
         )
