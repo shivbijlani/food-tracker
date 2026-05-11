@@ -140,7 +140,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://shivbijlani.github.io/food-tracker/',
+        'HTTP-Referer': 'https://mealjot.com/',
         'X-Title': 'Food Tracker',
       },
       body: JSON.stringify({
