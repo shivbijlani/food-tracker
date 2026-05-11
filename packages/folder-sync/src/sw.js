@@ -6,6 +6,7 @@ import { getTokens } from './auth/tokenStore.js'
 import { idbGet, idbSet } from './idb.js'
 import { oneDriveProvider } from './providers/oneDrive.js'
 import { googleDriveProvider } from './providers/googleDrive.js'
+import { mockProvider } from './providers/mock.js'
 
 const CHANNEL = 'folder-sync'
 const META_STORE = 'meta'
@@ -13,6 +14,7 @@ const META_STORE = 'meta'
 const PROVIDER_FACTORIES = {
   'onedrive': oneDriveProvider,
   'google-drive': googleDriveProvider,
+  'mock': mockProvider,
 }
 
 let currentProviders = []
@@ -135,8 +137,10 @@ async function readLocal(name) {
 }
 async function writeLocal(name, content) {
   await idbSet(META_STORE, `local:${name}`, { content, mtime: Date.now() })
-  // Notify clients so they can refresh their in-memory state / re-read via adapter
-  const clients = await self.clients.matchAll()
+  // Notify clients so they can refresh their in-memory state / re-read via adapter.
+  // Use `includeUncontrolled: true` because the SW's scope is narrow
+  // (`/folder-sync/`) and the app page may not be controlled by this SW.
+  const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
   for (const c of clients) c.postMessage({ type: 'remote-update', name })
 }
 async function getRemoteMtime(providerId, name) {

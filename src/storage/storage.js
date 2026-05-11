@@ -19,6 +19,7 @@ import {
   fsaAdapter,
   oneDriveProvider,
   googleDriveProvider,
+  mockProvider,
 } from '@shivbijlani/folder-sync'
 import { scaffoldFile } from './mdyaml.js'
 
@@ -42,6 +43,7 @@ export function getProviderName(id) {
     case PROVIDERS.FSA: return 'Local Folder'
     case 'onedrive': return 'OneDrive'
     case 'google-drive': return 'Google Drive'
+    case 'mock': return 'Mock (dev)'
     default: return id
   }
 }
@@ -64,6 +66,11 @@ function makeProviders() {
   const providers = [oneDriveProvider({ clientId: ONEDRIVE_CLIENT_ID })]
   if (GOOGLE_CLIENT_ID) {
     providers.push(googleDriveProvider({ clientId: GOOGLE_CLIENT_ID }))
+  }
+  // DEV-only mock provider for end-to-end sync testing without OAuth.
+  // Toggle by setting `localStorage.setItem('folder-sync-mock', '1')` then reloading.
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && window.localStorage?.getItem('folder-sync-mock') === '1') {
+    providers.push(mockProvider())
   }
   return providers
 }
