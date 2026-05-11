@@ -4,6 +4,7 @@ import { SettingsButton } from './SettingsButton.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
+import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
 import * as llm from './llm.js'
 
 const todayStr = () => {
@@ -179,7 +180,11 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   }
 
   const addEntry = async (entry) => {
-    await saveLog([entry, ...entries])
+    await saveLog(mergeEntry(entries, entry, 'simple'))
+  }
+
+  const updateEntry = async (idx, entry) => {
+    await saveLog(updateEntryAt(entries, idx, entry))
   }
 
   const deleteEntry = async (idx) => {
@@ -332,23 +337,62 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
                 <span className="muted">{dayCount} day{dayCount !== 1 ? 's' : ''} | avg {Math.round(avgProtein)}g/day</span>
                 <span className="collapse-arrow">{isExpanded ? '▲' : '▼'}</span>
               </div>
-              {isExpanded && weekEntries.map((e, i) => (
-                <div key={i} className="entry-row">
-                  <span className="entry-row-date">{e.Date}</span>
-                  <div className="entry-row-details">
-                    <span className="entry-row-meal">{e.Meal}</span>
-                    <span className="entry-row-protein"><strong>{e['Protein (g)']}</strong>g</span>
-                    <button
-                      className="icon-btn"
-                      title="Delete"
-                      onClick={() => deleteEntry(entries.indexOf(e))}
-                    >🗑</button>
-                  </div>
-                </div>
-              ))}
+              {isExpanded && weekEntries.map((e, i) => {
+                const globalIdx = entries.indexOf(e)
+                return (
+                  <SimpleEntryRow
+                    key={i}
+                    entry={e}
+                    onUpdate={(updated) => updateEntry(globalIdx, updated)}
+                    onDelete={() => deleteEntry(globalIdx)}
+                  />
+                )
+              })}
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function SimpleEntryRow({ entry, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(entry)
+
+  if (editing) {
+    const set = (k, v) => setDraft(d => ({ ...d, [k]: v }))
+    const save = async () => { await onUpdate(draft); setEditing(false) }
+    const cancel = () => { setDraft(entry); setEditing(false) }
+    return (
+      <div className="entry-row" style={{ background: 'rgba(0,0,0,0.04)', flexWrap: 'wrap', gap: 6, padding: 6 }}>
+        <input type="date" value={draft.Date || ''} onChange={e => set('Date', e.target.value)} />
+        <input
+          value={draft.Meal || ''}
+          onChange={e => set('Meal', e.target.value)}
+          placeholder="meal/food"
+          style={{ flex: 1, minWidth: 120 }}
+        />
+        <input
+          type="number"
+          value={draft['Protein (g)'] || 0}
+          onChange={e => set('Protein (g)', e.target.value)}
+          style={{ width: 60 }}
+        />
+        <button className="icon-btn" title="Save" onClick={save}>✓</button>
+        <button className="icon-btn" title="Cancel" onClick={cancel}>✕</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="entry-row">
+      <span className="entry-row-date">{entry.Date}</span>
+      <div className="entry-row-details">
+        <span className="entry-row-meal">{entry.Meal}</span>
+        <span className="entry-row-protein"><strong>{entry['Protein (g)']}</strong>g</span>
+        {onUpdate && <button className="icon-btn" title="Edit" onClick={() => setEditing(true)}>✏️</button>}
+        <button className="icon-btn" title="Delete" onClick={onDelete}>🗑</button>
       </div>
     </div>
   )
