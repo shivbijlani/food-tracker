@@ -36,7 +36,7 @@ input, textarea, select {
 .app {
   max-width: 880px;
   margin: 0 auto;
-  padding: 20px 16px 80px;
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(80px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 
 .app-header {
@@ -624,6 +624,12 @@ table.simple th {
   .tabs {
     margin-bottom: 16px;
     gap: 2px;
+    /* Make tabs sticky on mobile so navigation is always reachable */
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+    padding-top: 4px;
   }
 
   .tab {
@@ -631,6 +637,16 @@ table.simple th {
     font-size: 14px;
     flex: 1;
     text-align: center;
+    min-height: 44px;
+  }
+
+  /* Settings gear button: ensure 44x44 hit area on touch */
+  .settings-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+    font-size: 18px;
+    align-self: flex-end;
   }
 
   .card {
