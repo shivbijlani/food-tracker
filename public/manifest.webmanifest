@@ -1,0 +1,20 @@
+{
+  "name": "Food Tracker",
+  "short_name": "Food Tracker",
+  "description": "Local-first food and nutrition tracker that syncs to your own OneDrive.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#863bff",
+  "categories": ["health", "lifestyle", "productivity"],
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
