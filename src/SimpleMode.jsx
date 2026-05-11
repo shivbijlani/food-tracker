@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { storage } from './storage/storage.js'
 import { SettingsButton } from './SettingsButton.jsx'
-import {
-  parseTable, rowsToObjects, objectsToRows, replaceFirstTable,
-  PROTEIN_LOG_HEADERS, GOALS_HEADERS,
-} from './storage/markdown.js'
+import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
+import { readEntries, writeEntries } from './storage/mdyaml.js'
+import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import * as llm from './llm.js'
 
 const todayStr = () => {
@@ -108,6 +107,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Collapsible panels
   const [progressOpen, setProgressOpen] = useState(true)
@@ -124,20 +124,36 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   const loadAll = useCallback(async () => {
     if (!storageReady) return
     try {
-      await storage.scaffold(true) // true for simple mode
+      await storage.scaffold(true)
+      const curKey = currentMonthKey()
+      const curName = entryFileName('protein', curKey)
       const [logText, goalsText, sysText] = await Promise.all([
-        storage.readFile('protein-log.md').catch(() => ''),
+        storage.readFile(curName).catch(() => ''),
         storage.readFile('goals.md').catch(() => ''),
         storage.readFile('systems.md').catch(() => ''),
       ])
-      const parsed = parseTable(logText, PROTEIN_LOG_HEADERS)
-      setEntries(rowsToObjects(parsed.headers.length ? parsed.headers : PROTEIN_LOG_HEADERS, parsed.rows))
-      const gParsed = parseTable(goalsText, GOALS_HEADERS)
-      setGoals(rowsToObjects(gParsed.headers.length ? gParsed.headers : GOALS_HEADERS, gParsed.rows))
+      setEntries(readEntries(logText, PROTEIN_LOG_HEADERS).rows)
+      setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setSystemsText(sysText)
       setError('')
+
+      // Lazy-load history.
+      setLoadingHistory(true)
+      const months = await listMonthFiles(storage, 'protein')
+      const rest = months.filter(m => m.monthKey !== curKey)
+      if (rest.length) {
+        const texts = await Promise.all(rest.map(m => storage.readFile(m.name).catch(() => '')))
+        const histRows = texts.flatMap(t => readEntries(t, PROTEIN_LOG_HEADERS).rows)
+        setEntries(prev => {
+          const merged = [...prev, ...histRows]
+          merged.sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
+          return merged
+        })
+      }
+      setLoadingHistory(false)
     } catch (e) {
       setError(`Load error: ${e.message}`)
+      setLoadingHistory(false)
     }
   }, [storageReady])
 
@@ -145,9 +161,20 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
 
   const saveLog = async (newEntries) => {
     const sorted = [...newEntries].sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
-    const original = await storage.readFile('protein-log.md').catch(() => '')
-    const next = replaceFirstTable(original, PROTEIN_LOG_HEADERS, objectsToRows(PROTEIN_LOG_HEADERS, sorted))
-    await storage.writeFile('protein-log.md', next)
+    const buckets = groupByMonth(sorted)
+    const existing = await listMonthFiles(storage, 'protein')
+    for (const m of existing) {
+      if (!buckets.has(m.monthKey)) {
+        const orig = await storage.readFile(m.name).catch(() => '')
+        await storage.writeFile(m.name, writeEntries(orig, PROTEIN_LOG_HEADERS, [], { kind: 'entries', mode: 'simple', period: m.monthKey }))
+      }
+    }
+    for (const [key, rows] of buckets) {
+      const name = entryFileName('protein', key)
+      const original = await storage.readFile(name).catch(() => '')
+      const next = writeEntries(original, PROTEIN_LOG_HEADERS, rows, { kind: 'entries', mode: 'simple', period: key })
+      await storage.writeFile(name, next)
+    }
     setEntries(sorted)
   }
 
@@ -202,6 +229,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
       </header>
 
       {error && <div className="banner error">{error}</div>}
+      {loadingHistory && <div className="banner">Loading history…</div>}
 
       {/* Today's Progress */}
       <div className="card">

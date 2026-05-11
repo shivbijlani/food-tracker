@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { storage, getProvider, setProvider, PROVIDERS, getProviderName, getAvailableProviders } from './storage/storage.js'
+import { storage, getEngine, initStorage, registerSyncWorker, PROVIDERS, getProviderName, getAvailableProviders, getPrimaryId, setPrimary } from './storage/storage.js'
 import {
-  parseTable, rowsToObjects, objectsToRows, replaceFirstTable,
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
 } from './storage/markdown.js'
-import { LocalStorageProvider } from './storage/localstorage-provider.js'
-import { migrate, resumePendingMigration, hasPendingMigration, makeProvider } from './storage/migrate.js'
+import { readEntries, writeEntries } from './storage/mdyaml.js'
+import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
@@ -60,6 +59,8 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [mode, setModeState] = useState(() => localStorage.getItem('food-tracker-mode') || 'advanced')
   const [orConnectedBanner, setOrConnectedBanner] = useState(false)
+  const [syncStatus, setSyncStatus] = useState({ state: 'idle', providers: {} })
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   const switchMode = (m) => {
     localStorage.setItem('food-tracker-mode', m)
@@ -97,34 +98,9 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        // 1. If returning from OAuth redirect with a pending migration, finish it
-        if (hasPendingMigration()) {
-          const result = await resumePendingMigration()
-          if (result) {
-            await handleStorageReady(result.toId)
-            if (result.error) setError(result.error)
-            setLoading(false)
-            return
-          }
-        }
-
-        // 2. Look for saved provider
-        const savedId = localStorage.getItem('storage-provider') || PROVIDERS.LOCAL_STORAGE
-        const provider = makeProvider(savedId)
-        const ok = await provider.init()
-        if (ok && await provider.isReady()) {
-          setProvider(provider)
-          localStorage.setItem('storage-provider', savedId)
-          await handleStorageReady(savedId)
-        } else if (savedId !== PROVIDERS.LOCAL_STORAGE) {
-          // Cloud auth failed — fall back to localStorage so user isn't locked out
-          const fallback = new LocalStorageProvider()
-          await fallback.init()
-          setProvider(fallback)
-          localStorage.setItem('storage-provider', PROVIDERS.LOCAL_STORAGE)
-          await handleStorageReady(PROVIDERS.LOCAL_STORAGE)
-          setError(`Could not restore ${getProviderName(savedId)}. Using browser storage.`)
-        }
+        await registerSyncWorker()
+        await initStorage()
+        await handleStorageReady(getPrimaryId())
       } catch (e) {
         setError(`Storage init failed: ${e.message}`)
       } finally {
@@ -137,17 +113,35 @@ export default function App() {
     if (!storageReady) return
     try {
       await storage.scaffold(mode === 'simple')
-      const [logText, goalsText, recipesText] = await Promise.all([
-        storage.readFile('daily-log.md'),
+      const curKey = currentMonthKey()
+      const curName = entryFileName('entries', curKey)
+      const [curText, goalsText, recipesText] = await Promise.all([
+        storage.readFile(curName),
         storage.readFile('goals.md'),
         storage.readFile('recipes.md'),
       ])
-      setLogEntries(rowsToObjects(...Object.values(parseTable(logText, DAILY_LOG_HEADERS)).slice(0, 2)))
-      setGoals(rowsToObjects(...Object.values(parseTable(goalsText, GOALS_HEADERS)).slice(0, 2)))
-      setRecipes(rowsToObjects(...Object.values(parseTable(recipesText, RECIPE_HEADERS)).slice(0, 2)))
+      setLogEntries(readEntries(curText, DAILY_LOG_HEADERS).rows)
+      setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
+      setRecipes(readEntries(recipesText, RECIPE_HEADERS).rows)
       setError('')
+
+      // Lazy-load history in the background.
+      setLoadingHistory(true)
+      const months = await listMonthFiles(storage, 'entries')
+      const rest = months.filter(m => m.monthKey !== curKey)
+      if (rest.length) {
+        const texts = await Promise.all(rest.map(m => storage.readFile(m.name)))
+        const histRows = texts.flatMap(t => readEntries(t, DAILY_LOG_HEADERS).rows)
+        setLogEntries(prev => {
+          const merged = [...prev, ...histRows]
+          merged.sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
+          return merged
+        })
+      }
+      setLoadingHistory(false)
     } catch (e) {
       setError(`Load error: ${e.message}`)
+      setLoadingHistory(false)
     }
   }, [storageReady, mode])
 
@@ -155,20 +149,41 @@ export default function App() {
     if (storageReady) {
       loadAll()
       setLoading(false)
+      // Subscribe to sync engine status + reload on remote updates.
+      try {
+        const eng = getEngine()
+        const unsub = eng.subscribe((s) => {
+          setSyncStatus(s)
+          if (s.lastRemoteUpdate) loadAll()
+        })
+        return () => unsub()
+      } catch { /* engine not ready */ }
     }
   }, [storageReady, loadAll])
 
   const saveLog = async (newEntries) => {
     const sorted = [...newEntries].sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
-    const original = await storage.readFile('daily-log.md')
-    const next = replaceFirstTable(original, DAILY_LOG_HEADERS, objectsToRows(DAILY_LOG_HEADERS, sorted))
-    await storage.writeFile('daily-log.md', next)
+    const buckets = groupByMonth(sorted)
+    const existing = await listMonthFiles(storage, 'entries')
+    // Empty out months that previously had entries but no longer do.
+    for (const m of existing) {
+      if (!buckets.has(m.monthKey)) {
+        const orig = await storage.readFile(m.name)
+        await storage.writeFile(m.name, writeEntries(orig, DAILY_LOG_HEADERS, [], { kind: 'entries', mode: 'advanced', period: m.monthKey }))
+      }
+    }
+    for (const [key, rows] of buckets) {
+      const name = entryFileName('entries', key)
+      const original = await storage.readFile(name)
+      const next = writeEntries(original, DAILY_LOG_HEADERS, rows, { kind: 'entries', mode: 'advanced', period: key })
+      await storage.writeFile(name, next)
+    }
     setLogEntries(sorted)
   }
 
   const saveRecipes = async (newRecipes) => {
     const original = await storage.readFile('recipes.md')
-    const next = replaceFirstTable(original, RECIPE_HEADERS, objectsToRows(RECIPE_HEADERS, newRecipes))
+    const next = writeEntries(original, RECIPE_HEADERS, newRecipes, { kind: 'recipes' })
     await storage.writeFile('recipes.md', next)
     setRecipes(newRecipes)
   }
@@ -188,7 +203,7 @@ export default function App() {
   }
 
   if (mode === 'simple') {
-    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} storageProvider={storageProvider} />
+    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} storageProvider={storageProvider} syncStatus={syncStatus} />
   }
 
   return (
@@ -197,8 +212,9 @@ export default function App() {
         <h1 className="app-title">
           🥗 Food Tracker
           <span className="folder-pill" title="Storage location">📁 {folderName}</span>
+          <SyncIndicator status={syncStatus} />
         </h1>
-        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} />
+        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} syncStatus={syncStatus} />
       </header>
 
       <nav className="tabs">
@@ -214,6 +230,7 @@ export default function App() {
       </nav>
 
       {error && <div className="banner error">{error}</div>}
+      {loadingHistory && <div className="banner">Loading history…</div>}
       {orConnectedBanner && (
         <div className="banner" style={{ background: 'var(--good)', color: '#fff' }}>
           ✅ OpenRouter connected! You can now estimate nutrition using GPT-4o-mini and 400+ other models.
@@ -567,116 +584,157 @@ const STORAGE_META = {
     pros: ['Files you own and can edit directly', 'Works offline', 'Survives browser resets'],
     cons: ['Chrome or Edge desktop only'],
   },
-  [PROVIDERS.ONEDRIVE]: {
-    tagline: 'Sync across all your devices',
-    pros: ['Access from any device', 'Automatic backup'],
-    cons: ['Requires Microsoft account'],
-  },
-  [PROVIDERS.GOOGLE_DRIVE]: {
-    tagline: 'Sync across all your devices',
-    pros: ['Access from any device', 'Automatic backup'],
-    cons: ['Requires Google account'],
-  },
 }
 
-function MigrateStorageCard({ storageProvider, folderName }) {
-  const [confirming, setConfirming] = useState(null)
+function SyncIndicator({ status }) {
+  const state = status?.state || 'idle'
+  const colors = {
+    idle:    { dot: 'var(--muted, #aaa)', label: 'Idle' },
+    syncing: { dot: '#3b82f6', label: 'Syncing…' },
+    synced:  { dot: 'var(--good, #2e8b57)', label: 'Synced' },
+    offline: { dot: '#aaa', label: 'Offline' },
+    'reconnect-required': { dot: '#e11d48', label: 'Reconnect needed' },
+  }
+  const c = colors[state] || colors.idle
+  return (
+    <span className="folder-pill" title={`Sync: ${c.label}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.dot, display: 'inline-block' }} />
+      <span style={{ fontSize: '0.8rem' }}>{c.label}</span>
+    </span>
+  )
+}
+
+function StorageAndSyncCard({ storageProvider, folderName }) {
+  const [primary, setPrimaryLocal] = useState(storageProvider)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [keepSource, setKeepSource] = useState(true)
+  const [providers, setProviders] = useState([])
+  const [connected, setConnected] = useState({})
   const all = getAvailableProviders()
-  const others = all.filter(id => id !== storageProvider)
-  const isCloud = (id) => id === PROVIDERS.ONEDRIVE || id === PROVIDERS.GOOGLE_DRIVE
 
-  const startMigrate = async (toId) => {
-    setError('')
-    setBusy(true)
+  useEffect(() => {
     try {
-      const result = await migrate(getProvider(), toId, {
-        deleteSource: !keepSource,
-        fromId: storageProvider,
+      const eng = getEngine()
+      setProviders(eng.listProviders())
+      const unsub = eng.subscribe((s) => {
+        setConnected(Object.fromEntries(
+          Object.entries(s.providers || {}).map(([k, v]) => [k, !!v.connected])
+        ))
       })
-      if (result.ok) {
-        window.location.reload()
-        return
-      }
-      if (result.redirected) return
-      setError(result.error || 'Migration failed')
+      return () => unsub()
+    } catch { /* not ready */ }
+  }, [])
+
+  const switchPrimary = async (id) => {
+    if (id === primary) return
+    setBusy(true)
+    setError('')
+    try {
+      await setPrimary(id)
+      setPrimaryLocal(id)
+      window.location.reload()
     } catch (e) {
-      setError(e.message || 'Migration failed')
+      setError(e.message || 'Failed to switch primary')
     } finally {
       setBusy(false)
     }
+  }
+
+  const toggleProvider = async (id) => {
+    const eng = getEngine()
+    setBusy(true)
+    setError('')
+    try {
+      if (connected[id]) {
+        await eng.disconnect(id)
+        setConnected({ ...connected, [id]: false })
+      } else {
+        await eng.connect(id) // will redirect
+      }
+    } catch (e) {
+      setError(e.message || 'Sync action failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const syncNow = async () => {
+    try { await getEngine().syncNow() } catch (e) { setError(e.message) }
   }
 
   return (
     <div className="card">
       <h2>Storage</h2>
       <p className="muted">
-        Currently using: <strong>{getProviderName(storageProvider)}</strong> ({folderName})
+        Files live locally on this device for instant access. Optionally sync to the cloud in the background.
       </p>
 
-      {!confirming && (
-        <>
-          <p className="muted" style={{ marginTop: '0.25rem', marginBottom: '1rem' }}>
-            Choose where to store your data. You can switch at any time.
-          </p>
-          <div className="storage-option-grid">
-            {others.map(id => {
-              const meta = STORAGE_META[id] || {}
-              const icon = { [PROVIDERS.LOCAL_STORAGE]: '🗂️', [PROVIDERS.FSA]: '💾', [PROVIDERS.ONEDRIVE]: '☁️', [PROVIDERS.GOOGLE_DRIVE]: '🌐' }[id] || '📁'
-              return (
-                <button key={id} className="storage-option-card" onClick={() => setConfirming(id)} disabled={busy}>
-                  <div className="storage-option-header">
-                    <span className="storage-option-icon">{icon}</span>
-                    <div>
-                      <div className="storage-option-name">{getProviderName(id)}</div>
-                      <div className="storage-option-tagline">{meta.tagline}</div>
-                    </div>
+      <h3 style={{ marginTop: '1rem' }}>Primary (local)</h3>
+      <p className="muted" style={{ fontSize: '0.85rem' }}>
+        Currently: <strong>{getProviderName(primary)}</strong> ({folderName})
+      </p>
+      <div className="storage-option-grid">
+        {all.map(id => {
+          const meta = STORAGE_META[id] || {}
+          const icon = { [PROVIDERS.LOCAL_STORAGE]: '🗂️', [PROVIDERS.FSA]: '💾' }[id] || '📁'
+          const active = id === primary
+          return (
+            <button
+              key={id}
+              className="storage-option-card"
+              onClick={() => switchPrimary(id)}
+              disabled={busy || active}
+              style={active ? { outline: '2px solid var(--good, #2e8b57)' } : undefined}
+            >
+              <div className="storage-option-header">
+                <span className="storage-option-icon">{icon}</span>
+                <div>
+                  <div className="storage-option-name">
+                    {getProviderName(id)} {active && <span style={{ fontSize: '0.7rem', color: 'var(--good, #2e8b57)' }}>(active)</span>}
                   </div>
-                  <div className="storage-option-details">
-                    {meta.pros?.map(p => <span key={p} className="storage-tag storage-tag-pro">✓ {p}</span>)}
-                    {meta.cons?.map(c => <span key={c} className="storage-tag storage-tag-con">· {c}</span>)}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </>
-      )}
+                  <div className="storage-option-tagline">{meta.tagline}</div>
+                </div>
+              </div>
+              <div className="storage-option-details">
+                {meta.pros?.map(p => <span key={p} className="storage-tag storage-tag-pro">✓ {p}</span>)}
+                {meta.cons?.map(c => <span key={c} className="storage-tag storage-tag-con">· {c}</span>)}
+              </div>
+            </button>
+          )
+        })}
+      </div>
 
-      {confirming && (
-        <div className="banner info" style={{ marginTop: '0.75rem' }}>
-          <p>
-            <strong>Switch to {getProviderName(confirming)}?</strong> Your data will be copied there.
-            You can keep using the app normally afterward.
-          </p>
-          {storageProvider === PROVIDERS.LOCAL_STORAGE && (
-            <label style={{ display: 'block', margin: '0.5rem 0' }}>
-              <input
-                type="checkbox"
-                checked={!keepSource}
-                onChange={e => setKeepSource(!e.target.checked)}
-              />{' '}
-              Delete browser storage copy after switching
-            </label>
-          )}
-          {isCloud(confirming) && (
-            <p className="muted" style={{ fontSize: '0.85rem' }}>
-              You'll be redirected to sign in. Your data will be copied over automatically when you return.
-            </p>
-          )}
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-            <button className="btn" onClick={() => startMigrate(confirming)} disabled={busy}>
-              {busy ? 'Switching…' : 'Switch'}
-            </button>
-            <button className="btn btn-secondary" onClick={() => setConfirming(null)} disabled={busy}>
-              Cancel
-            </button>
-          </div>
-          {error && <div className="banner error" style={{ marginTop: '0.5rem' }}>{error}</div>}
+      <h3 style={{ marginTop: '1.25rem' }}>Cloud sync</h3>
+      <p className="muted" style={{ fontSize: '0.85rem' }}>
+        Optional. Runs in the background — your data stays available locally even when offline.
+      </p>
+      {providers.length === 0 && (
+        <div className="muted" style={{ fontSize: '0.85rem' }}>
+          No cloud providers configured. Set <code>VITE_GOOGLE_CLIENT_ID</code> to enable Google Drive.
         </div>
       )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {providers.map(p => (
+          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: 'rgba(0,0,0,0.03)', borderRadius: 4 }}>
+            <div>
+              <strong>{p.displayName}</strong>
+              <div className="muted" style={{ fontSize: '0.75rem' }}>
+                {connected[p.id] ? 'Connected' : 'Not connected'}
+              </div>
+            </div>
+            <button className="btn btn-secondary" onClick={() => toggleProvider(p.id)} disabled={busy}>
+              {connected[p.id] ? 'Disconnect' : 'Connect'}
+            </button>
+          </div>
+        ))}
+      </div>
+      {providers.length > 0 && (
+        <div style={{ marginTop: '0.5rem' }}>
+          <button className="btn btn-secondary" onClick={syncNow}>Sync now</button>
+        </div>
+      )}
+
+      {error && <div className="banner error" style={{ marginTop: '0.5rem' }}>{error}</div>}
     </div>
   )
 }
@@ -756,7 +814,7 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
         </div>
       )}
 
-      <MigrateStorageCard storageProvider={storageProvider} folderName={folderName} />
+      <StorageAndSyncCard storageProvider={storageProvider} folderName={folderName} />
 
       <div className="card">
         <h2>Nutrition Estimation</h2>

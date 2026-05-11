@@ -3,13 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
+    "predev": "node scripts/copy-sw.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-sw.mjs",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "copy:sw": "node scripts/copy-sw.mjs"
   },
   "dependencies": {
+    "@shivbijlani/folder-sync": "*",
     "idb-keyval": "^6.2.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
