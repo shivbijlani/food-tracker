@@ -168,11 +168,16 @@ input, textarea, select {
   margin-top: 8px;
 }
 .protein-estimate-row > .field {
-  flex: 0 0 auto;
-  min-width: 110px;
+  flex: 0 0 120px;
+  max-width: 120px;
+}
+.protein-estimate-row > .field input {
+  width: 100%;
+  min-width: 0;
 }
 .protein-estimate-row > .btn {
   flex: 1;
+  min-width: 100px;
   white-space: nowrap;
 }
 
