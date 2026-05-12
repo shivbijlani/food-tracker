@@ -10,6 +10,10 @@ export function StatusBadge({ folderName, syncStatus, mode, setMode, storageProv
   const anyReconnect = state === 'reconnect-required'
     || Object.values(syncStatus?.providers || {}).some(p => p?.needsReconnect)
 
+  // Browser Storage is the obvious/default — don't surface it in the pill.
+  const isBrowserStorage = storageProvider === 'browser-storage' || !storageProvider
+  const showFolderName = !isBrowserStorage && folderName
+
   // Pick the most informative status: errors > syncing > offline > idle/synced.
   let dot, label, srLabel
   if (anyReconnect) {
@@ -21,7 +25,10 @@ export function StatusBadge({ folderName, syncStatus, mode, setMode, storageProv
   } else if (state === 'synced') {
     dot = 'var(--good, #2e8b57)'; label = 'Synced'; srLabel = 'Synced to cloud'
   } else {
-    dot = null; label = null; srLabel = `Storage: ${folderName || 'Browser'} — click to open settings`
+    dot = null; label = null
+    srLabel = showFolderName
+      ? `Storage: ${folderName} — click to open settings`
+      : 'Open settings'
   }
 
   return (
@@ -46,11 +53,11 @@ export function StatusBadge({ folderName, syncStatus, mode, setMode, storageProv
             font: 'inherit',
           }}
         >
-          <span aria-hidden="true">📁</span>
-          <span>{folderName || 'Browser'}</span>
+          <span aria-hidden="true">⚙️</span>
+          {showFolderName && <span>{folderName}</span>}
           {dot && (
             <>
-              <span aria-hidden="true" style={{ opacity: 0.5 }}>·</span>
+              {showFolderName && <span aria-hidden="true" style={{ opacity: 0.5 }}>·</span>}
               <span
                 aria-hidden="true"
                 style={{ width: 8, height: 8, borderRadius: '50%', background: dot, display: 'inline-block' }}
