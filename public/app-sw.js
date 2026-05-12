@@ -1,13 +1,13 @@
 // App-level service worker: makes the app installable + offline-capable.
 // Separate from the folder-sync SW (which lives at /folder-sync/ scope and
-// handles cloud sync). This one's scope is the app root (e.g. /food-tracker/).
+// handles cloud sync). This one's scope is the app root (/).
 //
 // Strategy:
 //   - Stale-while-revalidate for same-origin GETs.
 //   - Navigation requests fall back to cached index.html when offline.
 //   - Folder-sync paths are NOT intercepted (the other SW owns them).
 
-const CACHE = 'food-tracker-app-v1'
+const CACHE = 'mealjot-app-v1'
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
