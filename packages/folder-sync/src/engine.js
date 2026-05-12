@@ -70,11 +70,24 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
     }
   }
 
+  async function getSyncSwRegistration() {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return null
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      // Prefer the SW whose scope ends with '/folder-sync/' (our registered scope).
+      return regs.find(r => r.scope && r.scope.includes('/folder-sync/')) || null
+    } catch {
+      return null
+    }
+  }
+
   async function nudgeSW(reason = 'write') {
-    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return
-    const reg = await navigator.serviceWorker.ready
+    const reg = await getSyncSwRegistration()
+    if (!reg) return
+    const sw = reg.active || reg.waiting || reg.installing
+    if (!sw) return
     const providerConfigs = providers.map(p => ({ id: p.id, clientId: p.clientId }))
-    reg.active?.postMessage({ type: 'sync', reason, providers: providerConfigs })
+    sw.postMessage({ type: 'sync', reason, providers: providerConfigs })
   }
 
   async function refreshConnectedFlags() {
@@ -118,6 +131,9 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
   // Kick-off
   refreshConnectedFlags()
   maybeCompleteOAuthRedirect()
+  // Drain any queued writes from a previous session (e.g. the user reloaded
+  // before sync finished). Wait one tick so the SW has time to register.
+  setTimeout(() => { nudgeSW('init').catch(() => {}) }, 500)
 
   return {
     // ---- local I/O (always immediate) ----
