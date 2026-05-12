@@ -181,6 +181,56 @@ input, textarea, select {
   white-space: nowrap;
 }
 
+.add-entry-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+.add-entry-actions .btn {
+  flex: 1;
+}
+
+/* Coaching card — AI-generated encouragement shown after a save */
+.coaching-card {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, var(--accent-soft, #eef4ff) 0%, rgba(255,255,255,0.4) 100%);
+  border: 1px solid var(--accent, #4f8cff);
+  border-radius: 10px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.45;
+  animation: coaching-fade-in 240ms ease-out;
+}
+@keyframes coaching-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.coaching-icon {
+  font-size: 18px;
+  line-height: 1.2;
+  flex: 0 0 auto;
+}
+.coaching-body {
+  flex: 1;
+  color: var(--text);
+}
+.coaching-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+.coaching-dismiss:hover {
+  color: var(--text);
+}
+
 .progress-bar {
   position: relative;
   height: 18px;

@@ -93,6 +93,15 @@ export function setModel(model, provider = getProvider()) {
   else localStorage.removeItem(k)
 }
 
+/**
+ * Returns true if the currently-configured LLM provider has credentials.
+ * Used to decide whether to surface AI-powered features like coaching and
+ * the "Estimate and save" action.
+ */
+export function isReady(provider = getProvider()) {
+  return Boolean(getApiKey(provider))
+}
+
 const SYSTEM_PROMPT = `You are a precise nutrition estimator. Given a free-text food description (which may include multiple items, portions, and recipe references), estimate the totals and reply with JSON only.
 
 Required JSON schema:
@@ -243,5 +252,158 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
     veg_servings: Math.round((Number(parsed.veg_servings) || 0) * 2) / 2,
     omega3: parsed.omega3 === 'Y' || parsed.omega3 === true ? 'Y' : 'N',
     confidence: ['low', 'medium', 'high'].includes(parsed.confidence) ? parsed.confidence : 'medium',
+  }
+}
+
+// --- Coaching ---------------------------------------------------------------
+
+const COACH_SYSTEM_PROMPT = `You are a friendly, encouraging nutrition coach focused on daily protein intake. The user just logged a meal. Given their recent log (last ~30 days) and their personal "success / failure systems" notes, write 1–3 short sentences of personalized encouragement, observation, or one actionable tip.
+
+Rules:
+- Be specific to what you see in their data (mention a number, pattern, or named meal).
+- Be warm but not saccharine. No exclamation points unless genuinely warranted.
+- Plain text only. No markdown, no lists, no headings.
+- Maximum 60 words.
+- Never invent data they didn't log.
+- If the data is sparse, lean on the success/failure systems for a tip.`
+
+/**
+ * Get a short coaching/encouragement message from the configured LLM.
+ * Silently returns `null` if not configured or if the call fails — never throws
+ * UI-breaking errors. Pass an AbortSignal to cancel in-flight requests when
+ * the user logs again quickly.
+ *
+ * @param {{ recentEntriesText?: string, systemsText?: string, proteinGoal?: number,
+ *           lastMeal?: string, lastProteinLogged?: number|string, signal?: AbortSignal }} ctx
+ * @returns {Promise<string|null>}
+ */
+export async function getCoaching(ctx = {}) {
+  const provider = getProvider()
+  const apiKey = getApiKey(provider)
+  if (!apiKey) return null
+
+  const {
+    recentEntriesText = '',
+    systemsText = '',
+    proteinGoal,
+    lastMeal = '',
+    lastProteinLogged = '',
+    signal,
+  } = ctx
+
+  // Cap context sizes to keep latency + token costs predictable.
+  const trimmedEntries = String(recentEntriesText).slice(-4000)
+  const trimmedSystems = String(systemsText).slice(0, 2000)
+
+  const userContent = [
+    proteinGoal ? `Daily protein goal: ${proteinGoal}g.` : '',
+    lastMeal ? `Just logged: "${lastMeal}" (${lastProteinLogged}g protein).` : '',
+    trimmedSystems ? `\nPersonal systems:\n${trimmedSystems}` : '',
+    trimmedEntries ? `\nRecent log (newest last):\n${trimmedEntries}` : '',
+  ].filter(Boolean).join('\n')
+
+  const model = getModel(provider)
+
+  try {
+    let res
+    if (provider === 'openrouter') {
+      let fallbacks = [model]
+      if (model.endsWith(':free')) {
+        const freeModels = await fetchFreeModels()
+        fallbacks = [model, ...freeModels.filter(m => m !== model)].slice(0, 3)
+      }
+      res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://mealjot.com/',
+          'X-Title': 'Mealjot Food Tracker',
+        },
+        body: JSON.stringify({
+          models: fallbacks,
+          messages: [
+            { role: 'system', content: COACH_SYSTEM_PROMPT },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 0.7,
+          max_tokens: 150,
+        }),
+        signal,
+      })
+    } else if (provider === 'claude') {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 200,
+          system: COACH_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userContent }],
+          temperature: 0.7,
+        }),
+        signal,
+      })
+    } else if (provider === 'github') {
+      res = await fetch('https://models.github.ai/inference/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: COACH_SYSTEM_PROMPT },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 0.7,
+          max_tokens: 200,
+        }),
+        signal,
+      })
+    } else {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: COACH_SYSTEM_PROMPT },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 0.7,
+          max_tokens: 200,
+        }),
+        signal,
+      })
+    }
+
+    if (!res.ok) return null
+    const data = await res.json()
+    const content = provider === 'claude'
+      ? data.content?.[0]?.text
+      : data.choices?.[0]?.message?.content
+    if (!content) return null
+
+    // Strip any markdown formatting the model may have ignored instructions on.
+    const cleaned = String(content)
+      .trim()
+      .replace(/^[#>*\-•\s]+/, '')
+      .replace(/\*\*/g, '')
+      .replace(/^["']|["']$/g, '')
+      .trim()
+    return cleaned || null
+  } catch {
+    // Abort or network/parse failure — silent.
+    return null
   }
 }

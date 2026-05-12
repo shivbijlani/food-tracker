@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { BRAND } from './branding.js'
 import { storage } from './storage/storage.js'
 import { StatusBadge } from './StatusBadge.jsx'
@@ -302,7 +302,15 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
           <h2 style={{ margin: 0 }}>Add Entry</h2>
           <span className="collapse-arrow">{addOpen ? '▲' : '▼'}</span>
         </div>
-        {addOpen && <AddEntrySimple onAdd={addEntry} defaultDate={today} />}
+        {addOpen && (
+          <AddEntrySimple
+            onAdd={addEntry}
+            defaultDate={today}
+            entries={entries}
+            systemsText={systemsText}
+            proteinGoal={proteinGoal}
+          />
+        )}
       </div>
 
       {/* Systems */}
@@ -405,14 +413,55 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
   )
 }
 
-function AddEntrySimple({ onAdd, defaultDate }) {
+function AddEntrySimple({ onAdd, defaultDate, entries = [], systemsText = '', proteinGoal }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('')
   const [protein, setProtein] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [coaching, setCoaching] = useState(null)
+  const [coachingBusy, setCoachingBusy] = useState(false)
+  const coachAbortRef = useRef(null)
+
+  // Re-evaluate LLM readiness on each render — cheap (localStorage read).
+  const llmReady = llm.isReady()
+  const proteinFilled = protein !== '' && Number(protein) >= 0
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+
+  // Cancel any in-flight coaching when the component unmounts.
+  useEffect(() => () => coachAbortRef.current?.abort(), [])
+
+  const runCoaching = (lastMeal, lastProteinLogged) => {
+    if (!llm.isReady()) return
+    coachAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    coachAbortRef.current = ctrl
+
+    // Last 30 days of entries serialized as compact lines.
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const recentEntriesText = entries
+      .filter(e => e.Date && e.Date >= cutoffStr)
+      .slice(-200)
+      .map(e => `${e.Date} | ${e['Protein (g)'] || 0}g | ${e.Meal || ''}`)
+      .join('\n')
+
+    setCoaching(null)
+    setCoachingBusy(true)
+    llm.getCoaching({
+      recentEntriesText,
+      systemsText,
+      proteinGoal,
+      lastMeal,
+      lastProteinLogged,
+      signal: ctrl.signal,
+    })
+      .then(text => { if (!ctrl.signal.aborted) setCoaching(text || null) })
+      .catch(() => { /* silent — feature is opportunistic */ })
+      .finally(() => { if (!ctrl.signal.aborted) setCoachingBusy(false) })
+  }
 
   const estimate = async () => {
     if (!meal.trim()) return
@@ -428,14 +477,35 @@ function AddEntrySimple({ onAdd, defaultDate }) {
     }
   }
 
-  const save = async () => {
-    if (!meal.trim()) return
+  const doSave = async (proteinValue) => {
+    const mealSnapshot = meal.trim()
+    const proteinSnapshot = proteinValue || '0'
     await onAdd({
       Date: date,
-      Meal: meal.trim(),
-      'Protein (g)': protein || '0',
+      Meal: mealSnapshot,
+      'Protein (g)': proteinSnapshot,
     })
     setMeal(''); setProtein(''); setErr('')
+    runCoaching(mealSnapshot, proteinSnapshot)
+  }
+
+  const save = async () => {
+    if (!meal.trim()) return
+    await doSave(protein)
+  }
+
+  const estimateAndSave = async () => {
+    if (!meal.trim()) return
+    setBusy(true); setErr('')
+    try {
+      const result = await llm.estimateNutrition(meal, {})
+      await doSave(String(result.protein_g ?? '0'))
+    } catch (e) {
+      setErr(e.message)
+      if (e.code === 'LLM_NOT_CONFIGURED') openSettings('settings-llm')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -465,14 +535,54 @@ function AddEntrySimple({ onAdd, defaultDate }) {
             onChange={e => setProtein(e.target.value)}
           />
         </div>
-        <button className="btn btn-secondary" onClick={estimate} disabled={busy || !meal.trim()}>
+        <button
+          className="btn btn-secondary"
+          onClick={estimate}
+          disabled={busy || !meal.trim() || proteinFilled}
+          title={proteinFilled ? 'Clear the protein field to re-estimate' : ''}
+        >
           {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate'}
         </button>
       </div>
       {err && <div className="banner error">{err}</div>}
-      <div style={{ marginTop: 8 }}>
-        <button className="btn" onClick={save} disabled={!meal.trim()}>Save</button>
+      <div className="add-entry-actions">
+        {llmReady && !proteinFilled ? (
+          <button className="btn" onClick={estimateAndSave} disabled={busy || !meal.trim()}>
+            {busy ? <><span className="spinner" />Working…</> : '✨ Estimate & Save'}
+          </button>
+        ) : (
+          <button className="btn" onClick={save} disabled={busy || !meal.trim()}>
+            Save
+          </button>
+        )}
       </div>
+      <CoachingCard busy={coachingBusy} text={coaching} onDismiss={() => setCoaching(null)} />
+    </div>
+  )
+}
+
+function CoachingCard({ busy, text, onDismiss }) {
+  if (!busy && !text) return null
+  return (
+    <div className="coaching-card" role="status" aria-live="polite">
+      <div className="coaching-icon" aria-hidden="true">💬</div>
+      <div className="coaching-body">
+        {busy && !text && (
+          <span className="muted">
+            <span className="spinner" /> Thinking about your meal…
+          </span>
+        )}
+        {text && <span>{text}</span>}
+      </div>
+      {text && (
+        <button
+          type="button"
+          className="icon-btn coaching-dismiss"
+          onClick={onDismiss}
+          title="Dismiss"
+          aria-label="Dismiss coaching"
+        >×</button>
+      )}
     </div>
   )
 }
