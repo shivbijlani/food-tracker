@@ -111,8 +111,11 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   const provider = getProvider()
   const apiKey = getApiKey(provider)
   if (!apiKey) {
-    if (provider === 'openrouter') throw new Error('OpenRouter not connected. Connect in Settings.')
-    throw new Error(`No ${PROVIDERS[provider].label} API key configured. Add one in Settings.`)
+    const err = provider === 'openrouter'
+      ? new Error('OpenRouter not connected. Connect in Settings.')
+      : new Error(`No ${PROVIDERS[provider].label} API key configured. Add one in Settings.`)
+    err.code = 'LLM_NOT_CONFIGURED'
+    throw err
   }
 
   const recipeContext = recipes.length

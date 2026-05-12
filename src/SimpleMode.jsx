@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { BRAND } from './branding.js'
 import { storage } from './storage/storage.js'
 import { StatusBadge } from './StatusBadge.jsx'
+import { openSettings } from './SettingsButton.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
@@ -419,6 +420,7 @@ function AddEntrySimple({ onAdd, defaultDate }) {
       setProtein(String(result.protein_g ?? ''))
     } catch (e) {
       setErr(e.message)
+      if (e.code === 'LLM_NOT_CONFIGURED') openSettings('settings-llm')
     } finally {
       setBusy(false)
     }
