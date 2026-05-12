@@ -72,6 +72,7 @@ export default function App() {
   const resolvedMode = mode || 'advanced'
   const [orConnectedBanner, setOrConnectedBanner] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [syncStatus, setSyncStatus] = useState({ state: 'idle', providers: {} })
 
   const handleStorageReady = async (providerId) => {
     setStorageProvider(providerId)
