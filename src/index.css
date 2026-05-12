@@ -288,6 +288,36 @@ table.simple th {
 }
 
 .muted { color: var(--text-muted); font-size: 13px; }
+
+.app-footer {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  color: var(--text-muted, #6b7280);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+.app-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.app-footer-links a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.app-footer-links a:hover { color: var(--text, #111); }
+.app-footer-disclaimer {
+  max-width: 560px;
+  margin: 6px auto 0;
+  opacity: 0.85;
+  font-size: 11px;
+}
 .text-right { text-align: right; }
 .gap-8 { gap: 8px; }
 .flex { display: flex; }
