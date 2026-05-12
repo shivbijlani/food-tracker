@@ -45,7 +45,7 @@ async function fetchFreeModels() {
 }
 
 export const PROVIDERS = {
-  openrouter: { label: 'OpenRouter', defaultModel: 'openrouter/auto', oauth: true },
+  openrouter: { label: 'OpenRouter', defaultModel: 'openrouter/auto:free', oauth: true },
   github: { label: 'GitHub Models (free)', defaultModel: 'openai/gpt-4o-mini', keyPlaceholder: 'github_pat_… or ghp_…', keyUrl: 'https://github.com/settings/tokens' },
   openai: { label: 'OpenAI', defaultModel: 'gpt-4o-mini', keyPlaceholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
   claude: { label: 'Anthropic Claude', defaultModel: 'claude-haiku-4-5', keyPlaceholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/api-keys' },
