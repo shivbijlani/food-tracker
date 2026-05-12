@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { BRAND } from './branding.js'
 import { storage } from './storage/storage.js'
 import { SettingsButton } from './SettingsButton.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
@@ -116,8 +117,8 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   const [systemsOpen, setSystemsOpen] = useState(false)
 
   // Plan fields (localStorage-backed)
-  const [planText, setPlanText] = useState(() => localStorage.getItem('food-tracker-plan-text') || '')
-  const [planProtein, setPlanProtein] = useState(() => Number(localStorage.getItem('food-tracker-plan-protein')) || 0)
+  const [planText, setPlanText] = useState(() => localStorage.getItem('mealjot-plan-text') || '')
+  const [planProtein, setPlanProtein] = useState(() => Number(localStorage.getItem('mealjot-plan-protein')) || 0)
 
   // Week expand state
   const [expandedWeeks, setExpandedWeeks] = useState(() => new Set([currentWeekKey()]))
@@ -226,7 +227,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   return (
     <div className="app">
       <header className="app-header">
-        <h1 className="app-title">🥗 Food Tracker</h1>
+        <h1 className="app-title">{BRAND.emoji} {BRAND.appName}</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {folderName && <span className="folder-pill" title="Storage folder">📁 {folderName}</span>}
           <SettingsButton mode={mode} setMode={setMode} folderName={folderName} storageProvider={storageProvider} />
@@ -269,7 +270,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
                 rows={3}
                 onChange={e => {
                   setPlanText(e.target.value)
-                  localStorage.setItem('food-tracker-plan-text', e.target.value)
+                  localStorage.setItem('mealjot-plan-text', e.target.value)
                 }}
               />
             </div>
@@ -282,7 +283,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
                 onChange={e => {
                   const v = Number(e.target.value) || 0
                   setPlanProtein(v)
-                  localStorage.setItem('food-tracker-plan-protein', String(v))
+                  localStorage.setItem('mealjot-plan-protein', String(v))
                 }}
               />
             </div>

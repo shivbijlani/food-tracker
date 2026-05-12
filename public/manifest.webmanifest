@@ -1,7 +1,7 @@
 {
-  "name": "Food Tracker",
-  "short_name": "Food Tracker",
-  "description": "Local-first food and nutrition tracker that syncs to your own OneDrive.",
+  "name": "Mealjot Food Tracker",
+  "short_name": "Mealjot",
+  "description": "Local-first food and nutrition tracker that syncs to your own cloud.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

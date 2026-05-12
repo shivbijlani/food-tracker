@@ -2,8 +2,8 @@
 // No app registration required. The key is user-controlled and stored in localStorage.
 // Docs: https://openrouter.ai/docs/use-cases/oauth-pkce
 
-const KEY_STORAGE = 'food-tracker-openrouter-key'
-const VERIFIER_STORAGE = 'food-tracker-openrouter-verifier'
+const KEY_STORAGE = 'mealjot-openrouter-key'
+const VERIFIER_STORAGE = 'mealjot-openrouter-verifier'
 const OR_STATE = 'openrouter' // used as the OAuth state param to detect our callbacks
 
 function generateVerifier() {

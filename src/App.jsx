@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { BRAND } from './branding.js'
 import { storage, getEngine, initStorage, registerSyncWorker, PROVIDERS, getProviderName, getAvailableProviders, getPrimaryId, setPrimary } from './storage/storage.js'
 import {
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
@@ -58,13 +59,13 @@ export default function App() {
   const [recipes, setRecipes] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [mode, setModeState] = useState(() => localStorage.getItem('food-tracker-mode') || 'advanced')
+  const [mode, setModeState] = useState(() => localStorage.getItem('mealjot-mode') || 'advanced')
   const [orConnectedBanner, setOrConnectedBanner] = useState(false)
   const [syncStatus, setSyncStatus] = useState({ state: 'idle', providers: {} })
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   const switchMode = (m) => {
-    localStorage.setItem('food-tracker-mode', m)
+    localStorage.setItem('mealjot-mode', m)
     setModeState(m)
   }
 
@@ -215,7 +216,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1 className="app-title">
-          🥗 Food Tracker
+          {BRAND.emoji} {BRAND.appName}
           <span className="folder-pill" title="Storage location">📁 {folderName}</span>
           <SyncIndicator status={syncStatus} />
         </h1>
@@ -974,7 +975,7 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
                   <strong>Free — no billing required.</strong> To get your token:
                   <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
                     <li>Go to <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a></li>
-                    <li>Give it any name (e.g. <em>food-tracker</em>)</li>
+                    <li>Give it any name (e.g. <em>mealjot</em>)</li>
                     <li>Under <strong>Account permissions</strong> → <strong>Models</strong> → set to <strong>Read-only</strong></li>
                     <li>Click <strong>Generate token</strong>, copy it, paste above</li>
                   </ol>

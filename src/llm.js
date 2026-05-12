@@ -2,14 +2,14 @@
 
 import * as openrouterAuth from './openrouter-auth.js'
 
-const PROVIDER_STORAGE = 'food-tracker-llm-provider'
-const KEY_STORAGE = 'food-tracker-openai-key'
-const MODEL_STORAGE = 'food-tracker-openai-model'
-const CLAUDE_KEY_STORAGE = 'food-tracker-claude-key'
-const CLAUDE_MODEL_STORAGE = 'food-tracker-claude-model'
-const GITHUB_KEY_STORAGE = 'food-tracker-github-key'
-const GITHUB_MODEL_STORAGE = 'food-tracker-github-model'
-const OPENROUTER_MODEL_STORAGE = 'food-tracker-openrouter-model'
+const PROVIDER_STORAGE = 'mealjot-llm-provider'
+const KEY_STORAGE = 'mealjot-openai-key'
+const MODEL_STORAGE = 'mealjot-openai-model'
+const CLAUDE_KEY_STORAGE = 'mealjot-claude-key'
+const CLAUDE_MODEL_STORAGE = 'mealjot-claude-model'
+const GITHUB_KEY_STORAGE = 'mealjot-github-key'
+const GITHUB_MODEL_STORAGE = 'mealjot-github-model'
+const OPENROUTER_MODEL_STORAGE = 'mealjot-openrouter-model'
 
 // Dynamically fetches free model IDs from OpenRouter's public catalog.
 // Caches the result for 1 hour so we don't hit the API on every request.
@@ -141,7 +141,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://mealjot.com/',
-        'X-Title': 'Food Tracker',
+        'X-Title': 'Mealjot Food Tracker',
       },
       body: JSON.stringify({
         models: fallbacks,
