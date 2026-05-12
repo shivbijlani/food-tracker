@@ -12,6 +12,7 @@ import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
 import { openSettings } from './SettingsButton.jsx'
+import { Footer } from './Footer.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -252,6 +253,7 @@ export default function App() {
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
+      <Footer />
     </div>
   )
 }

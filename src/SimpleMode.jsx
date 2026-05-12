@@ -3,6 +3,7 @@ import { BRAND } from './branding.js'
 import { storage } from './storage/storage.js'
 import { StatusBadge } from './StatusBadge.jsx'
 import { openSettings } from './SettingsButton.jsx'
+import { Footer } from './Footer.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
@@ -357,6 +358,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
           )
         })}
       </div>
+      <Footer />
     </div>
   )
 }
