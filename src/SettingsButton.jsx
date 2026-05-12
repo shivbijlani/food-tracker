@@ -1,20 +1,25 @@
 import { useState } from 'react'
 import { SettingsView } from './App.jsx'
 
-/** Settings button shown in the header of both Simple and Advanced modes. */
-export function SettingsButton({ mode, setMode, folderName, storageProvider }) {
+/** Settings button shown in the header of both Simple and Advanced modes.
+ *  Optionally accepts `renderTrigger(onOpen)` to render a custom trigger
+ *  (e.g. the StatusBadge) instead of the default ⚙ gear button. */
+export function SettingsButton({ mode, setMode, folderName, storageProvider, renderTrigger }) {
   const [open, setOpen] = useState(false)
+  const onOpen = () => setOpen(true)
 
   return (
     <>
-      <button
-        className="settings-btn"
-        onClick={() => setOpen(true)}
-        title="Settings"
-        aria-label="Settings"
-      >
-        ⚙
-      </button>
+      {renderTrigger ? renderTrigger(onOpen) : (
+        <button
+          className="settings-btn"
+          onClick={onOpen}
+          title="Settings"
+          aria-label="Settings"
+        >
+          ⚙
+        </button>
+      )}
       {open && (
         <div className="settings-modal-backdrop" onClick={() => setOpen(false)}>
           <div className="settings-modal" onClick={e => e.stopPropagation()}>
@@ -36,4 +41,3 @@ export function SettingsButton({ mode, setMode, folderName, storageProvider }) {
     </>
   )
 }
-
