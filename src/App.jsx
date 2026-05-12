@@ -10,7 +10,7 @@ import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
-import { SettingsButton } from './SettingsButton.jsx'
+import { StatusBadge } from './StatusBadge.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -217,10 +217,14 @@ export default function App() {
       <header className="app-header">
         <h1 className="app-title">
           {BRAND.emoji} {BRAND.appName}
-          <span className="folder-pill" title="Storage location">📁 {folderName}</span>
-          <SyncIndicator status={syncStatus} />
         </h1>
-        <SettingsButton mode={mode} setMode={switchMode} folderName={folderName} storageProvider={storageProvider} syncStatus={syncStatus} />
+        <StatusBadge
+          folderName={folderName}
+          syncStatus={syncStatus}
+          mode={mode}
+          setMode={switchMode}
+          storageProvider={storageProvider}
+        />
       </header>
 
       <nav className="tabs">
@@ -651,24 +655,6 @@ const STORAGE_META = {
     pros: ['Files you own and can edit directly', 'Works offline', 'Survives browser resets'],
     cons: ['Chrome or Edge desktop only'],
   },
-}
-
-function SyncIndicator({ status }) {
-  const state = status?.state || 'idle'
-  const colors = {
-    idle:    { dot: 'var(--muted, #aaa)', label: 'Idle' },
-    syncing: { dot: '#3b82f6', label: 'Syncing…' },
-    synced:  { dot: 'var(--good, #2e8b57)', label: 'Synced' },
-    offline: { dot: '#aaa', label: 'Offline' },
-    'reconnect-required': { dot: '#e11d48', label: 'Reconnect needed' },
-  }
-  const c = colors[state] || colors.idle
-  return (
-    <span className="folder-pill" title={`Sync: ${c.label}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.dot, display: 'inline-block' }} />
-      <span style={{ fontSize: '0.8rem' }}>{c.label}</span>
-    </span>
-  )
 }
 
 function StorageAndSyncCard({ storageProvider, folderName }) {

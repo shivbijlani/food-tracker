@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BRAND } from './branding.js'
 import { storage } from './storage/storage.js'
-import { SettingsButton } from './SettingsButton.jsx'
+import { StatusBadge } from './StatusBadge.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
@@ -105,7 +105,7 @@ function MarkdownView({ text }) {
   return <div className="systems-content">{blocks}</div>
 }
 
-export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider }) {  const [entries, setEntries] = useState([])
+export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider, syncStatus }) {  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
@@ -228,10 +228,13 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     <div className="app">
       <header className="app-header">
         <h1 className="app-title">{BRAND.emoji} {BRAND.appName}</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {folderName && <span className="folder-pill" title="Storage folder">📁 {folderName}</span>}
-          <SettingsButton mode={mode} setMode={setMode} folderName={folderName} storageProvider={storageProvider} />
-        </div>
+        <StatusBadge
+          folderName={folderName}
+          syncStatus={syncStatus}
+          mode={mode}
+          setMode={setMode}
+          storageProvider={storageProvider}
+        />
       </header>
 
       {error && <div className="banner error">{error}</div>}
