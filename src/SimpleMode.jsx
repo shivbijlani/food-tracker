@@ -441,7 +441,7 @@ function AddEntrySimple({ onAdd, defaultDate }) {
   return (
     <div style={{ marginTop: 12 }}>
       <div className="row">
-        <div className="field" style={{ maxWidth: 160 }}>
+        <div className="field">
           <label>Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
@@ -455,8 +455,8 @@ function AddEntrySimple({ onAdd, defaultDate }) {
           onChange={e => setMeal(e.target.value)}
         />
       </div>
-      <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-        <div className="field" style={{ maxWidth: 160 }}>
+      <div className="protein-estimate-row">
+        <div className="field">
           <label>Protein (g)</label>
           <input
             type="number"
@@ -465,7 +465,7 @@ function AddEntrySimple({ onAdd, defaultDate }) {
             onChange={e => setProtein(e.target.value)}
           />
         </div>
-        <button className="btn btn-secondary" onClick={estimate} disabled={busy || !meal.trim()} style={{ marginBottom: 0 }}>
+        <button className="btn btn-secondary" onClick={estimate} disabled={busy || !meal.trim()}>
           {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate'}
         </button>
       </div>

@@ -159,6 +159,23 @@ input, textarea, select {
 }
 .row > * { flex: 1 1 120px; }
 
+/* Protein+Estimate inline row — stays horizontal on all screen sizes */
+.protein-estimate-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.protein-estimate-row > .field {
+  flex: 0 0 auto;
+  min-width: 110px;
+}
+.protein-estimate-row > .btn {
+  flex: 1;
+  white-space: nowrap;
+}
+
 .progress-bar {
   position: relative;
   height: 18px;
@@ -719,6 +736,10 @@ table.simple th {
   .row {
     flex-direction: column;
     gap: 8px;
+  }
+  /* Remove inline max-width constraints on fields when rows stack vertically */
+  .row > .field {
+    max-width: none !important;
   }
 
   /* Entry styling for touch */
