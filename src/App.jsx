@@ -11,6 +11,7 @@ import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
+import { openSettings } from './SettingsButton.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -340,6 +341,7 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
       setPreview(result)
     } catch (e) {
       setErr(e.message)
+      if (e.code === 'LLM_NOT_CONFIGURED') openSettings('settings-llm')
     } finally {
       setBusy(false)
     }
@@ -869,7 +871,7 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
 
       <StorageAndSyncCard storageProvider={storageProvider} folderName={folderName} />
 
-      <div className="card">
+      <div className="card" id="settings-llm">
         <h2>Nutrition Estimation</h2>
 
         {/* OpenRouter OAuth option */}
