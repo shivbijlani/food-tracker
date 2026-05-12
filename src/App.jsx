@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BRAND } from './branding.js'
-import { storage, getEngine, initStorage, registerSyncWorker, PROVIDERS, getProviderName, getAvailableProviders, getPrimaryId, setPrimary } from './storage/storage.js'
+import { storage, getEngine, initStorage, detectModeFromData, registerSyncWorker, PROVIDERS, getProviderName, getAvailableProviders, getPrimaryId, setPrimary } from './storage/storage.js'
 import {
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
 } from './storage/markdown.js'
@@ -61,15 +61,17 @@ export default function App() {
   const [recipes, setRecipes] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [mode, setModeState] = useState(() => localStorage.getItem('mealjot-mode') || 'advanced')
-  const [orConnectedBanner, setOrConnectedBanner] = useState(false)
-  const [syncStatus, setSyncStatus] = useState({ state: 'idle', providers: {} })
-  const [loadingHistory, setLoadingHistory] = useState(false)
-
+  // Mode state — respect explicit user choice; auto-detect from data on first load.
+  const MODE_KEY = 'mealjot-mode'
+  const [mode, setModeState] = useState(() => localStorage.getItem(MODE_KEY) || '')
   const switchMode = (m) => {
-    localStorage.setItem('mealjot-mode', m)
+    localStorage.setItem(MODE_KEY, m)
     setModeState(m)
   }
+  // Resolved mode: explicit choice wins; fallback to 'advanced' until detection runs.
+  const resolvedMode = mode || 'advanced'
+  const [orConnectedBanner, setOrConnectedBanner] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   const handleStorageReady = async (providerId) => {
     setStorageProvider(providerId)
@@ -105,6 +107,11 @@ export default function App() {
         await registerSyncWorker()
         await initStorage()
         await handleStorageReady(getPrimaryId())
+        // Auto-detect mode from data only when user hasn't explicitly chosen.
+        if (!localStorage.getItem(MODE_KEY)) {
+          const detected = await detectModeFromData()
+          if (detected) switchMode(detected)
+        }
       } catch (e) {
         setError(`Storage init failed: ${e.message}`)
       } finally {
@@ -116,7 +123,7 @@ export default function App() {
   const loadAll = useCallback(async () => {
     if (!storageReady) return
     try {
-      await storage.scaffold(mode === 'simple')
+      await storage.scaffold(resolvedMode === 'simple')
       const curKey = currentMonthKey()
       const curName = entryFileName('entries', curKey)
       const [curText, goalsText, recipesText] = await Promise.all([
@@ -147,7 +154,7 @@ export default function App() {
       setError(`Load error: ${e.message}`)
       setLoadingHistory(false)
     }
-  }, [storageReady, mode])
+  }, [storageReady, resolvedMode])
 
   useEffect(() => { 
     if (storageReady) {
@@ -210,8 +217,8 @@ export default function App() {
     return <div className="app"><div className="empty">Initializing storage…</div></div>
   }
 
-  if (mode === 'simple') {
-    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={mode} setMode={switchMode} storageProvider={storageProvider} syncStatus={syncStatus} />
+  if (resolvedMode === 'simple') {
+    return <SimpleMode storageReady={storageReady} folderName={folderName} mode={resolvedMode} setMode={switchMode} storageProvider={storageProvider} syncStatus={syncStatus} />
   }
 
   return (
@@ -223,7 +230,7 @@ export default function App() {
         <StatusBadge
           folderName={folderName}
           syncStatus={syncStatus}
-          mode={mode}
+          mode={resolvedMode}
           setMode={switchMode}
           storageProvider={storageProvider}
         />
@@ -1032,5 +1039,7 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
     </>
   )
 }
+
+
 
 
