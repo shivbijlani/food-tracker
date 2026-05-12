@@ -104,6 +104,46 @@ export async function initStorage() {
   return _engine
 }
 
+/**
+ * Inspect the most recent entry files to determine which mode (simple/advanced)
+ * has data. Returns 'simple', 'advanced', or null (no data either way).
+ * Only reads the frontmatter of up to 2 files, so it's fast.
+ */
+export async function detectModeFromData() {
+  try {
+    const files = await _engine.listFiles()
+    const entryFiles = files
+      .filter(n => /^entries-\d{4}-\d{2}\.md$/.test(n))
+      .sort()
+      .reverse() // newest first
+
+    if (!entryFiles.length) return null
+
+    // Read up to the 2 most recent files to find a mode hint.
+    for (const name of entryFiles.slice(0, 2)) {
+      const text = await _engine.readFile(name)
+      if (!text) continue
+      // Quick frontmatter peek — don't import full parser to avoid circular deps.
+      const m = text.match(/^---\s*\n([\s\S]*?)\n---/m)
+      if (!m) continue
+      const modeMatch = m[1].match(/^mode:\s*(\S+)/m)
+      const rowMatch = text.match(/^\|[^|]+\|/m) // any data rows?
+      const hasData = rowMatch && text.split('\n').filter(l => l.startsWith('|') && !l.match(/^[| -]+$/)).length > 2
+      if (modeMatch && hasData) return modeMatch[1] === 'simple' ? 'simple' : 'advanced'
+    }
+
+    // Fallback: presence of systems.md → simple mode had data
+    if (files.includes('systems.md')) {
+      const sysText = await _engine.readFile('systems.md')
+      if (sysText && sysText.trim().length > 50) return 'simple'
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
 export function getEngine() {
   if (!_engine) throw new Error('Storage not initialised — call initStorage() first.')
   return _engine
