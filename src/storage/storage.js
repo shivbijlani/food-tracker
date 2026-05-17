@@ -178,7 +178,12 @@ export const storage = {
    * pull the user's real files down from the cloud — clobbering them.
    */
   async scaffold(isSimpleMode = false) {
-    await waitForFirstSync()
+    const safe = await waitForFirstSync()
+    // If we timed out waiting for the first sync, do NOT scaffold. Writing
+    // stub files now would race the eventual pull and could overwrite the
+    // user's real cloud copies. They can reload to retry; meanwhile the
+    // app still works against whatever the local mirror contains.
+    if (!safe) return
     const files = isSimpleMode ? scaffoldSimple() : scaffoldAdvanced()
     for (const [name, content] of files) {
       const existing = await _engine.readFile(name)
@@ -193,8 +198,11 @@ if (typeof window !== 'undefined' && import.meta.env?.DEV) {
 }
 
 /**
- * Resolve once it's safe to scaffold default files without risk of
- * overwriting remote content. We're safe when:
+ * Resolve `true` once it's safe to scaffold default files without risk of
+ * overwriting remote content. Resolves `false` if we hit the hard timeout
+ * — caller should skip scaffolding in that case.
+ *
+ * Safe when:
  *   - no providers are configured (purely local app), OR
  *   - no providers are connected (user hasn't enabled cloud sync), OR
  *   - the user is offline (no remote to clobber — sync queue will reconcile
@@ -202,38 +210,29 @@ if (typeof window !== 'undefined' && import.meta.env?.DEV) {
  *   - the connected provider has completed at least one sync cycle this
  *     session (overall state transitions to 'synced', 'idle', 'error', or
  *     'reconnect-required' after the initial 'syncing' phase).
- *
- * Falls through after a hard timeout so a slow / hung sync doesn't block
- * the app from starting forever.
  */
 const FIRST_SYNC_TIMEOUT_MS = 15_000
 let _firstSyncPromise = null
 function waitForFirstSync() {
   if (_firstSyncPromise) return _firstSyncPromise
   _firstSyncPromise = new Promise((resolve) => {
-    if (!_engine) return resolve()
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return resolve()
+    if (!_engine) return resolve(true)
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return resolve(true)
 
-    // If the engine has no providers configured at all, nothing to wait for.
     if (typeof _engine.listProviders === 'function' && _engine.listProviders().length === 0) {
-      return resolve()
+      return resolve(true)
     }
 
     let done = false
     let sawConnectedProvider = false
-    const finish = () => {
+    const finish = (safe) => {
       if (done) return
       done = true
       clearTimeout(timer)
       try { unsub() } catch { /* ignore */ }
-      resolve()
+      resolve(safe)
     }
 
-    // The SW broadcasts top-level `lastSync` once it has completed a sync
-    // cycle (push + pull). That's our "safe to scaffold" signal. We also
-    // resolve early on fatal sync states so the app doesn't hang on a
-    // provider that can't make progress (the auto-reconnect flow will
-    // redirect the user separately).
     const FATAL = new Set(['error', 'reconnect-required', 'offline'])
 
     const check = (s) => {
@@ -243,20 +242,20 @@ function waitForFirstSync() {
 
       // Resolve early if we previously saw a connected provider and now
       // none are connected — means the user explicitly disconnected mid-
-      // session, nothing to wait for. We deliberately do NOT exit on the
-      // first emission with no connected flag: token-restore runs async,
-      // so the initial status often shows providers without connected:true
-      // for a brief moment. Exiting there would race the SW's first pull
-      // and let scaffold clobber the user's real cloud files.
-      if (!connected && Object.keys(provs).length > 0 && sawConnectedProvider) return finish()
+      // session. We deliberately do NOT exit on the first emission with no
+      // connected flag: token-restore runs async, so the initial status
+      // often shows providers without connected:true for a brief moment.
+      // Exiting there would race the SW's first pull and let scaffold
+      // clobber the user's real cloud files.
+      if (!connected && Object.keys(provs).length > 0 && sawConnectedProvider) return finish(true)
 
-      if (s?.lastSync) return finish()
-      if (s?.state && FATAL.has(s.state)) return finish()
-      if (Object.values(provs).some(p => p?.state && FATAL.has(p.state))) return finish()
+      if (s?.lastSync) return finish(true)
+      if (s?.state && FATAL.has(s.state)) return finish(true)
+      if (Object.values(provs).some(p => p?.state && FATAL.has(p.state))) return finish(true)
     }
 
     const unsub = _engine.subscribe(check)
-    const timer = setTimeout(finish, FIRST_SYNC_TIMEOUT_MS)
+    const timer = setTimeout(() => finish(false), FIRST_SYNC_TIMEOUT_MS)
   })
   return _firstSyncPromise
 }
