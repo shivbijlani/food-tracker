@@ -170,8 +170,15 @@ export const storage = {
   /**
    * Create initial scaffold files if they don't exist. Mode-aware.
    * Lives here (not in adapters) because scaffold content is app-specific.
+   *
+   * Sync-aware: if a cloud provider is connected and we're online, wait for
+   * the first sync cycle to complete before checking whether each scaffold
+   * file exists. Without this, a fresh page load would write stub files
+   * locally and enqueue them for upload *before* the SW had a chance to
+   * pull the user's real files down from the cloud — clobbering them.
    */
   async scaffold(isSimpleMode = false) {
+    await waitForFirstSync()
     const files = isSimpleMode ? scaffoldSimple() : scaffoldAdvanced()
     for (const [name, content] of files) {
       const existing = await _engine.readFile(name)
@@ -183,6 +190,71 @@ export const storage = {
 if (typeof window !== 'undefined' && import.meta.env?.DEV) {
   window.__storage = storage
   window.__getEngine = getEngine
+}
+
+/**
+ * Resolve once it's safe to scaffold default files without risk of
+ * overwriting remote content. We're safe when:
+ *   - no providers are configured (purely local app), OR
+ *   - no providers are connected (user hasn't enabled cloud sync), OR
+ *   - the user is offline (no remote to clobber — sync queue will reconcile
+ *     when they come back online), OR
+ *   - the connected provider has completed at least one sync cycle this
+ *     session (overall state transitions to 'synced', 'idle', 'error', or
+ *     'reconnect-required' after the initial 'syncing' phase).
+ *
+ * Falls through after a hard timeout so a slow / hung sync doesn't block
+ * the app from starting forever.
+ */
+const FIRST_SYNC_TIMEOUT_MS = 15_000
+let _firstSyncPromise = null
+function waitForFirstSync() {
+  if (_firstSyncPromise) return _firstSyncPromise
+  _firstSyncPromise = new Promise((resolve) => {
+    if (!_engine) return resolve()
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return resolve()
+
+    // If the engine has no providers configured at all, nothing to wait for.
+    if (typeof _engine.listProviders === 'function' && _engine.listProviders().length === 0) {
+      return resolve()
+    }
+
+    let done = false
+    let sawConnectedProvider = false
+    const finish = () => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      try { unsub() } catch { /* ignore */ }
+      resolve()
+    }
+
+    // The SW broadcasts top-level `lastSync` once it has completed a sync
+    // cycle (push + pull). That's our "safe to scaffold" signal. We also
+    // resolve early on fatal sync states so the app doesn't hang on a
+    // provider that can't make progress (the auto-reconnect flow will
+    // redirect the user separately).
+    const FATAL = new Set(['error', 'reconnect-required', 'offline'])
+
+    const check = (s) => {
+      const provs = s?.providers || {}
+      const connected = Object.values(provs).some(p => p?.connected)
+      if (connected) sawConnectedProvider = true
+
+      // First settle: connected-provider flags refresh asynchronously after
+      // engine creation. If we've heard from that pass and there are still
+      // no connected providers, nothing to wait for.
+      if (!connected && Object.keys(provs).length > 0 && !sawConnectedProvider) return finish()
+
+      if (s?.lastSync) return finish()
+      if (s?.state && FATAL.has(s.state)) return finish()
+      if (Object.values(provs).some(p => p?.state && FATAL.has(p.state))) return finish()
+    }
+
+    const unsub = _engine.subscribe(check)
+    const timer = setTimeout(finish, FIRST_SYNC_TIMEOUT_MS)
+  })
+  return _firstSyncPromise
 }
 
 const GOALS_COLS = ['Nutrient','Target','Notes']

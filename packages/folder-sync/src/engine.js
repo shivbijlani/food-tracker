@@ -10,6 +10,26 @@ import { idbSet, idbGet } from './idb.js'
 
 const CHANNEL = 'folder-sync'
 const META_STORE = 'meta'
+const INTENDED_KEY = 'folder-sync:intended-providers'
+const AUTO_RECONNECT_FLAG = 'folder-sync:auto-reconnected'
+
+function readIntended() {
+  if (typeof localStorage === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(INTENDED_KEY)
+    return new Set(raw ? JSON.parse(raw) : [])
+  } catch { return new Set() }
+}
+function writeIntended(set) {
+  if (typeof localStorage === 'undefined') return
+  try { localStorage.setItem(INTENDED_KEY, JSON.stringify([...set])) } catch { /* ignore */ }
+}
+function addIntended(id) {
+  const s = readIntended(); s.add(id); writeIntended(s)
+}
+function removeIntended(id) {
+  const s = readIntended(); s.delete(id); writeIntended(s)
+}
 
 async function mirrorWrite(name, content) {
   await idbSet(META_STORE, `local:${name}`, { content, mtime: Date.now() })
@@ -42,6 +62,7 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
       if (!evt.data || evt.data.type !== 'status') return
       status = { ...status, ...evt.data.status }
       emit()
+      maybeAutoReconnect()
     }
   }
 
@@ -95,6 +116,10 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
     for (const p of providers) {
       const tok = await getTokens(p.id)
       connected[p.id] = { connected: !!tok, state: tok ? 'idle' : 'disconnected', error: null }
+      // Backfill: any provider with stored tokens is presumed intentionally
+      // connected. Ensures the auto-reconnect-on-load behaviour also kicks
+      // in for users who connected before this feature shipped.
+      if (tok) addIntended(p.id)
     }
     status = { ...status, providers: connected }
     emit()
@@ -110,6 +135,9 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
         const ok = await p.completeAuth(params, redirectUri)
         if (ok) {
           window.history.replaceState({}, document.title, window.location.pathname)
+          addIntended(p.id)
+          // Allow auto-reconnect to fire again on future breakages this session.
+          try { sessionStorage.removeItem(`${AUTO_RECONNECT_FLAG}:${p.id}`) } catch { /* ignore */ }
           await refreshConnectedFlags()
           await nudgeSW('post-auth')
           return
@@ -117,6 +145,42 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
       } catch (e) {
         console.error(`[folder-sync] ${p.id} completeAuth failed:`, e)
       }
+    }
+  }
+
+  // If a provider the user previously connected is reporting it can no
+  // longer sync (token expired / refresh revoked / tokens missing), redirect
+  // them to sign in on page load. This prevents the user from editing data
+  // locally while sync is broken — those edits would later clobber changes
+  // made on another device once sync resumes.
+  //
+  // Skipped when:
+  //   - offline (can't reach the IdP),
+  //   - returning from an OAuth redirect (URL has code/state),
+  //   - the user voluntarily disconnected (provider not in intended set),
+  //   - we already auto-redirected this session (avoid loops if the user
+  //     cancels the sign-in screen).
+  let autoReconnectAttempted = false
+  function maybeAutoReconnect() {
+    if (autoReconnectAttempted) return
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return
+    if (!navigator.onLine) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('code') || params.has('state') || params.has('error')) return
+    const intended = readIntended()
+    if (intended.size === 0) return
+    for (const p of providers) {
+      if (!intended.has(p.id)) continue
+      const ps = status.providers?.[p.id]
+      if (!ps || ps.state !== 'reconnect-required') continue
+      const flagKey = `${AUTO_RECONNECT_FLAG}:${p.id}`
+      try { if (sessionStorage.getItem(flagKey)) continue } catch { /* ignore */ }
+      autoReconnectAttempted = true
+      try { sessionStorage.setItem(flagKey, '1') } catch { /* ignore */ }
+      Promise.resolve(p.startAuth(redirectUri)).catch(err => {
+        console.warn('[folder-sync] auto-reconnect failed:', err)
+      })
+      return
     }
   }
 
@@ -171,9 +235,17 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
     async connect(providerId) {
       const p = providerMap.get(providerId)
       if (!p) throw new Error(`Unknown provider: ${providerId}`)
+      // Record user intent up-front so a successful sign-in (which redirects
+      // away from the app and back) is recognised as intentional. Without
+      // this, the post-redirect handler still marks them intended on
+      // completeAuth — but recording it here is harmless and covers any
+      // provider that may not strictly return through completeAuth.
+      addIntended(providerId)
       await p.startAuth(redirectUri) // redirects; flow resumes via maybeCompleteOAuthRedirect
     },
     async disconnect(providerId) {
+      removeIntended(providerId)
+      try { sessionStorage.removeItem(`${AUTO_RECONNECT_FLAG}:${providerId}`) } catch { /* ignore */ }
       await clearTokens(providerId)
       await refreshConnectedFlags()
     },

@@ -13,6 +13,8 @@ import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
 import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
+import { CoachingCard, useCoaching } from './Coaching.jsx'
+import { debounce } from './debounce.js'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -162,13 +164,19 @@ export default function App() {
       loadAll()
       setLoading(false)
       // Subscribe to sync engine status + reload on remote updates.
+      // Debounced because the engine fires one `lastRemoteUpdate` per file —
+      // a sync that pulls down N files would otherwise trigger N reloads.
+      const debouncedReload = debounce(() => loadAll(), 150)
       try {
         const eng = getEngine()
         const unsub = eng.subscribe((s) => {
           setSyncStatus(s)
-          if (s.lastRemoteUpdate) loadAll()
+          if (s.lastRemoteUpdate) debouncedReload()
         })
-        return () => unsub()
+        return () => {
+          debouncedReload.cancel()
+          unsub()
+        }
       } catch { /* engine not ready */ }
     }
   }, [storageReady, loadAll])
@@ -210,6 +218,20 @@ export default function App() {
 
   const deleteEntry = async (idx) => {
     await saveLog(logEntries.filter((_, i) => i !== idx))
+  }
+
+  // Coaching — shared with SimpleMode, shown in Advanced too.
+  const proteinGoalRow = goals.find(g => /protein/i.test(g.Nutrient || g['Nutrient / Metric'] || ''))
+  const proteinGoal = proteinGoalRow ? (parseGoalTarget(proteinGoalRow.Target)?.mid ?? 100) : 100
+  const { coaching, setCoaching, requestCoaching } = useCoaching({
+    storageReady,
+    entries: logEntries,
+    proteinGoal,
+  })
+
+  const addEntryWithCoaching = async (entry) => {
+    await addEntry(entry)
+    requestCoaching(entry?.Meal || '', entry?.['Protein (g)'] || '')
   }
 
   if (loading) return <div className="app"><div className="empty">Loading…</div></div>
@@ -257,7 +279,10 @@ export default function App() {
         </div>
       )}
 
-      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntry} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} />}
+      {/* Coaching tip — shown on load if LLM connected, refreshed after each save */}
+      <CoachingCard text={coaching} onDismiss={() => setCoaching(null)} />
+
+      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}

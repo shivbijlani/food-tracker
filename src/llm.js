@@ -257,15 +257,13 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
 // --- Coaching ---------------------------------------------------------------
 
-const COACH_SYSTEM_PROMPT = `You are a friendly, encouraging nutrition coach focused on daily protein intake. The user just logged a meal. Given their recent log (last ~30 days) and their personal "success / failure systems" notes, write 1–3 short sentences of personalized encouragement, observation, or one actionable tip.
+const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preamble, no rules, no quoting these instructions.`
 
-Rules:
-- Be specific to what you see in their data (mention a number, pattern, or named meal).
-- Be warm but not saccharine. No exclamation points unless genuinely warranted.
-- Plain text only. No markdown, no lists, no headings.
-- Maximum 60 words.
-- Never invent data they didn't log.
-- If the data is sparse, lean on the success/failure systems for a tip.`
+// Kept separate from the system prompt so it can be included in the user
+// message instead. Small/free models often echo system prompts verbatim,
+// so we put behavioural guidance in the user turn and keep the system
+// message minimal. Used by the leak filter below as well.
+const COACH_GUIDANCE = `You are a friendly nutrition coach focused on daily protein. The user just logged a meal. Given the data below, write 1–2 short sentences of personalized encouragement, observation, or one actionable tip. Be specific (mention a number, pattern, or named meal). Plain text only — no markdown, no lists, no headings, no "Rules:" sections. Max 50 words. Never invent data.`
 
 /**
  * Get a short coaching/encouragement message from the configured LLM.
@@ -296,11 +294,13 @@ export async function getCoaching(ctx = {}) {
   const trimmedSystems = String(systemsText).slice(0, 2000)
 
   const userContent = [
+    COACH_GUIDANCE,
+    '',
     proteinGoal ? `Daily protein goal: ${proteinGoal}g.` : '',
     lastMeal ? `Just logged: "${lastMeal}" (${lastProteinLogged}g protein).` : '',
     trimmedSystems ? `\nPersonal systems:\n${trimmedSystems}` : '',
     trimmedEntries ? `\nRecent log (newest last):\n${trimmedEntries}` : '',
-  ].filter(Boolean).join('\n')
+  ].filter(s => s !== undefined && s !== null).join('\n')
 
   const model = getModel(provider)
 
@@ -327,7 +327,7 @@ export async function getCoaching(ctx = {}) {
             { role: 'user', content: userContent },
           ],
           temperature: 0.7,
-          max_tokens: 150,
+          max_tokens: 120,
         }),
         signal,
       })
@@ -342,7 +342,7 @@ export async function getCoaching(ctx = {}) {
         },
         body: JSON.stringify({
           model,
-          max_tokens: 200,
+          max_tokens: 120,
           system: COACH_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userContent }],
           temperature: 0.7,
@@ -363,7 +363,7 @@ export async function getCoaching(ctx = {}) {
             { role: 'user', content: userContent },
           ],
           temperature: 0.7,
-          max_tokens: 200,
+          max_tokens: 120,
         }),
         signal,
       })
@@ -381,7 +381,7 @@ export async function getCoaching(ctx = {}) {
             { role: 'user', content: userContent },
           ],
           temperature: 0.7,
-          max_tokens: 200,
+          max_tokens: 120,
         }),
         signal,
       })
@@ -395,15 +395,45 @@ export async function getCoaching(ctx = {}) {
     if (!content) return null
 
     // Strip any markdown formatting the model may have ignored instructions on.
-    const cleaned = String(content)
+    let cleaned = String(content)
       .trim()
       .replace(/^[#>*\-•\s]+/, '')
       .replace(/\*\*/g, '')
       .replace(/^["']|["']$/g, '')
       .trim()
+
+    // Leak filter: small/free models sometimes echo the system prompt or our
+    // guidance text. If the response contains a non-trivial substring from
+    // either, drop it rather than show garbled output to the user.
+    if (looksLikePromptLeak(cleaned)) return null
+
     return cleaned || null
   } catch {
     // Abort or network/parse failure — silent.
     return null
   }
+}
+
+function looksLikePromptLeak(text) {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  // Clear giveaways from either prompt.
+  const tells = [
+    'you are a friendly',
+    'coaching message only',
+    'nutrition coach',
+    'never invent data',
+    'plain text only',
+    'rules:',
+    'max 50 words',
+    'maximum 60 words',
+    'personal systems:',
+    'recent log',
+  ]
+  let hits = 0
+  for (const t of tells) if (lower.includes(t)) hits++
+  // 2+ tells is almost certainly a leak; a single very specific one also counts.
+  return hits >= 2
+    || lower.includes('you are a friendly nutrition coach')
+    || lower.includes('coaching message only')
 }
