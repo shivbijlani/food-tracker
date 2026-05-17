@@ -250,14 +250,14 @@ input, textarea, select {
 
 .progress-row {
   display: grid;
-  grid-template-columns: 110px 1fr 90px;
+  grid-template-columns: 110px 1fr auto;
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
   font-size: 14px;
 }
 .progress-row .label { color: var(--text-muted); font-weight: 500; }
-.progress-row .value { text-align: right; font-weight: 600; }
+.progress-row .value { text-align: right; font-weight: 600; white-space: nowrap; }
 
 .entry {
   border-left: 3px solid var(--accent-soft);
@@ -692,7 +692,7 @@ table.simple th {
 }
 
 /* ── Mobile Responsive ──────────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 640px) {
   body {
     font-size: 14px;
   }
@@ -778,7 +778,7 @@ table.simple th {
 
   /* Progress bars on mobile */
   .progress-row {
-    grid-template-columns: 80px 1fr 70px;
+    grid-template-columns: 80px 1fr auto;
     gap: 8px;
     font-size: 13px;
   }
@@ -928,7 +928,7 @@ table.simple th {
   }
 
   .progress-row {
-    grid-template-columns: 70px 1fr 60px;
+    grid-template-columns: 70px 1fr auto;
     gap: 6px;
     font-size: 12px;
   }

@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BRAND } from './branding.js'
+import {
+  InstallButton, InstallModal, InstallNudge, InstallSuccessToast,
+} from '../packages/install-prompt/src/index.js'
+import '../packages/install-prompt/src/styles/install-prompt.css'
 import { storage, getEngine, initStorage, detectModeFromData, registerSyncWorker, PROVIDERS, getProviderName, getAvailableProviders, getPrimaryId, setPrimary } from './storage/storage.js'
 import {
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
@@ -58,6 +62,7 @@ export default function App() {
   const [storageProvider, setStorageProvider] = useState('')
   const [folderName, setFolderName] = useState('')
   const [tab, setTab] = useState('today')
+  const [installOpen, setInstallOpen] = useState(false)
   const [logEntries, setLogEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [recipes, setRecipes] = useState([])
@@ -286,7 +291,18 @@ export default function App() {
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
-      <Footer />
+      <InstallNudge onOpen={() => setInstallOpen(true)} appName={BRAND.appName} />
+      <InstallSuccessToast appName={BRAND.appName} />
+      {installOpen && <InstallModal onClose={() => setInstallOpen(false)} appName={BRAND.appName} />}
+      <Footer
+        installButton={
+          <InstallButton
+            onOpen={() => setInstallOpen(true)}
+            appName={BRAND.appName}
+            label="Install app"
+          />
+        }
+      />
     </div>
   )
 }

@@ -241,10 +241,14 @@ function waitForFirstSync() {
       const connected = Object.values(provs).some(p => p?.connected)
       if (connected) sawConnectedProvider = true
 
-      // First settle: connected-provider flags refresh asynchronously after
-      // engine creation. If we've heard from that pass and there are still
-      // no connected providers, nothing to wait for.
-      if (!connected && Object.keys(provs).length > 0 && !sawConnectedProvider) return finish()
+      // Resolve early if we previously saw a connected provider and now
+      // none are connected — means the user explicitly disconnected mid-
+      // session, nothing to wait for. We deliberately do NOT exit on the
+      // first emission with no connected flag: token-restore runs async,
+      // so the initial status often shows providers without connected:true
+      // for a brief moment. Exiting there would race the SW's first pull
+      // and let scaffold clobber the user's real cloud files.
+      if (!connected && Object.keys(provs).length > 0 && sawConnectedProvider) return finish()
 
       if (s?.lastSync) return finish()
       if (s?.state && FATAL.has(s.state)) return finish()
