@@ -1,6 +1,6 @@
 # Food Tracker
 
-A local-first food & nutrition tracker with mobile support. Inspired by the [focus-planner](https://github.com/shivbijlani/focus-planner) architecture: your data lives as plain markdown files — not in a database, not on a server.
+A local-first food & nutrition tracker with mobile support. Your data lives as plain markdown files — not in a database, not on a server.
 
 ## Features
 
