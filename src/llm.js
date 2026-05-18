@@ -128,8 +128,8 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   }
 
   const recipeContext = recipes.length
-    ? `\n\nKnown recipes (per serving):\n${recipes.map(r =>
-        `- ${r.Recipe}: ${r.Calories} kcal, ${r['Protein (g)']}g protein, ${r['Calcium (mg)']}mg calcium`
+    ? `\n\nKnown recipes (nutrition is per serving):\n${recipes.map(r =>
+        `- ${r.Recipe}${r.Servings ? ` (makes ${r.Servings} servings)` : ''}: ${r.Calories} kcal, ${r['Protein (g)']}g protein, ${r['Calcium (mg)']}mg calcium per serving`
       ).join('\n')}`
     : ''
 
