@@ -605,19 +605,21 @@ function RecipesView({ recipes, onSave }) {
         {recipes.length === 0 ? (
           <div className="empty">No recipes yet.</div>
         ) : (
-          <table className="simple">
-            <thead>
-              <tr>{RECIPE_HEADERS.map(h => <th key={h}>{h}</th>)}<th></th></tr>
-            </thead>
-            <tbody>
-              {recipes.map((r, i) => (
-                <tr key={i}>
-                  {RECIPE_HEADERS.map(h => <td key={h}>{r[h]}</td>)}
-                  <td><button className="icon-btn" onClick={() => remove(i)}>🗑</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="recipes-table-wrap">
+            <table className="simple recipes-table">
+              <thead>
+                <tr>{RECIPE_HEADERS.map(h => <th key={h}>{h}</th>)}<th></th></tr>
+              </thead>
+              <tbody>
+                {recipes.map((r, i) => (
+                  <tr key={i}>
+                    {RECIPE_HEADERS.map(h => <td key={h}>{r[h]}</td>)}
+                    <td><button className="icon-btn" onClick={() => remove(i)}>🗑</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -667,6 +669,48 @@ const STORAGE_META = {
     pros: ['Files you own and can edit directly', 'Works offline', 'Survives browser resets'],
     cons: ['Chrome or Edge desktop only'],
   },
+}
+
+function OneDriveInfoPopover() {
+  const [open, setOpen] = useState(false)
+  return (
+    <span style={{ position: 'relative', display: 'inline-block', lineHeight: 1 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '0.95rem', padding: '0 0.1rem', fontWeight: 'normal' }}
+        title="How does this work?"
+      >
+        ⓘ
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute', left: 0, top: '1.6rem', zIndex: 10,
+            background: 'var(--bg, #fff)', border: '1px solid var(--border, #ddd)',
+            borderRadius: 6, padding: '0.75rem', width: 290, fontSize: '0.85rem',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.12)', lineHeight: 1.55, fontWeight: 'normal',
+          }}
+        >
+          <p style={{ margin: '0 0 0.5rem' }}>
+            Connecting OneDrive saves your files to{' '}
+            <strong>Apps/MealJot Food Tracker</strong> in your OneDrive account.
+          </p>
+          <p style={{ margin: '0 0 0.5rem' }}>
+            You can browse that folder from any device — phone, tablet, or another computer — just like any OneDrive folder.
+          </p>
+          <p style={{ margin: 0 }}>
+            The files are plain text, so you can also ask Claude, Copilot, or any AI assistant to read or edit them for you.
+          </p>
+          <button
+            onClick={() => setOpen(false)}
+            style={{ marginTop: '0.6rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '0.8rem', padding: 0 }}
+          >
+            Close
+          </button>
+        </div>
+      )}
+    </span>
+  )
 }
 
 function StorageAndSyncCard({ storageProvider, folderName }) {
@@ -769,9 +813,12 @@ function StorageAndSyncCard({ storageProvider, folderName }) {
         })}
       </div>
 
-      <h3 style={{ marginTop: '1.25rem' }}>Cloud sync</h3>
+      <h3 style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+        Access from other devices
+        <OneDriveInfoPopover />
+      </h3>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Optional. Runs in the background — your data stays available locally even when offline.
+        Connect OneDrive to use your food log on your phone, tablet, or any other computer.
       </p>
       {providers.length === 0 && (
         <div className="muted" style={{ fontSize: '0.85rem' }}>
@@ -784,7 +831,7 @@ function StorageAndSyncCard({ storageProvider, folderName }) {
             <div>
               <strong>{p.displayName}</strong>
               <div className="muted" style={{ fontSize: '0.75rem' }}>
-                {connected[p.id] ? 'Connected' : 'Not connected'}
+                {connected[p.id] ? 'Connected · Apps/MealJot Food Tracker/' : 'Not connected'}
               </div>
             </div>
             <button className="btn btn-secondary" onClick={() => toggleProvider(p.id)} disabled={busy}>

@@ -359,6 +359,34 @@ table.simple th {
   letter-spacing: 0.4px;
 }
 
+/* ── Recipes table ────────────────────────────── */
+.recipes-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Numeric columns shrink to content; Notes gets the remaining space */
+.recipes-table th:nth-child(2), /* Servings */
+.recipes-table td:nth-child(2),
+.recipes-table th:nth-child(3), /* Calories */
+.recipes-table td:nth-child(3),
+.recipes-table th:nth-child(4), /* Protein */
+.recipes-table td:nth-child(4),
+.recipes-table th:nth-child(5), /* Calcium */
+.recipes-table td:nth-child(5),
+.recipes-table th:last-child,   /* delete btn */
+.recipes-table td:last-child {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.recipes-table th:nth-child(6), /* Notes */
+.recipes-table td:nth-child(6) {
+  width: auto;
+  min-width: 80px;
+  word-break: break-word;
+}
+
 .muted { color: var(--text-muted); font-size: 13px; }
 
 .app-footer {
