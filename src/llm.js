@@ -102,6 +102,20 @@ export function isReady(provider = getProvider()) {
   return Boolean(getApiKey(provider))
 }
 
+const NUTRITION_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    calories: { type: 'number', description: 'total kcal' },
+    protein_g: { type: 'number', description: 'grams of protein' },
+    calcium_mg: { type: 'number', description: 'milligrams of calcium' },
+    veg_servings: { type: 'number', description: '1 serving = ~1 cup raw or 1/2 cup cooked vegetables' },
+    omega3: { type: 'string', enum: ['Y', 'N'], description: 'Y if the meal contains a meaningful source (fatty fish, walnuts, flax, chia)' },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+  },
+  required: ['calories', 'protein_g', 'calcium_mg', 'veg_servings', 'omega3', 'confidence'],
+  additionalProperties: false,
+}
+
 const SYSTEM_PROMPT = `You are a precise nutrition estimator. Given a free-text food description (which may include multiple items, portions, and recipe references), estimate the totals and reply with JSON only.
 
 Required JSON schema:
@@ -161,6 +175,10 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
           { role: 'system', content: systemContent },
           { role: 'user', content: foodDescription },
         ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'nutrition_estimate', strict: true, schema: NUTRITION_JSON_SCHEMA },
+        },
         temperature: 0.2,
       }),
       signal,
@@ -209,7 +227,10 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
       },
       body: JSON.stringify({
         model,
-        response_format: { type: 'json_object' },
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'nutrition_estimate', strict: true, schema: NUTRITION_JSON_SCHEMA },
+        },
         messages: [
           { role: 'system', content: systemContent },
           { role: 'user', content: foodDescription },
@@ -236,13 +257,19 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   }
   if (!content) throw new Error('No response from model')
 
-  // Extract JSON from content (Claude may wrap in markdown code fences)
-  const jsonMatch = content.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('Model returned no JSON: ' + content.slice(0, 200))
-
   let parsed
-  try { parsed = JSON.parse(jsonMatch[0]) } catch {
-    throw new Error('Model returned invalid JSON: ' + content.slice(0, 200))
+  try {
+    // Try parsing the entire content as JSON first (common for structured outputs)
+    parsed = JSON.parse(content)
+  } catch {
+    // Fallback: Extract JSON from content (Claude or other models may wrap in markdown)
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('Model returned no JSON: ' + content.slice(0, 200))
+    try {
+      parsed = JSON.parse(jsonMatch[0])
+    } catch {
+      throw new Error('Model returned invalid JSON: ' + content.slice(0, 200))
+    }
   }
 
   return {
