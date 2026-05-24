@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { BRAND } from './branding.js'
 import { storage, getEngine } from './storage/storage.js'
 import { debounce } from './debounce.js'
@@ -343,6 +343,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
             onAdd={addEntry}
             defaultDate={today}
             onAfterSave={requestCoaching}
+            entries={entries}
           />
         )}
       </div>
@@ -447,18 +448,50 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
   )
 }
 
-function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
+function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('')
   const [protein, setProtein] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   // Re-evaluate LLM readiness on each render — cheap (localStorage read).
   const llmReady = llm.isReady()
   const proteinFilled = protein !== '' && Number(protein) >= 0
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+
+  const suggestions = useMemo(() => {
+    const list = []
+    const seen = new Set()
+    // Entries are already sorted by date desc in parent
+    for (const e of entries) {
+      const name = e.Meal || ''
+      if (name && !seen.has(name.toLowerCase())) {
+        list.push({
+          name,
+          protein_g: num(e['Protein (g)'])
+        })
+        seen.add(name.toLowerCase())
+      }
+    }
+    return list
+  }, [entries])
+
+  const filteredSuggestions = useMemo(() => {
+    const query = meal.trim().toLowerCase()
+    if (!query) return []
+    return suggestions
+      .filter(s => s.name.toLowerCase().includes(query))
+      .slice(0, 6)
+  }, [suggestions, meal])
+
+  const selectSuggestion = (s) => {
+    setMeal(s.name)
+    setProtein(String(s.protein_g))
+    setShowSuggestions(false)
+  }
 
   const estimate = async () => {
     if (!meal.trim()) return
@@ -520,7 +553,19 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
           placeholder="e.g. 2 eggs, Greek yogurt, protein shake"
           value={meal}
           onChange={e => setMeal(e.target.value)}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
         />
+        {showSuggestions && filteredSuggestions.length > 0 && (
+          <div className="suggestions-list">
+            {filteredSuggestions.map((s, i) => (
+              <div key={i} className="suggestion-item" onClick={() => selectSuggestion(s)}>
+                <span className="suggestion-name">{s.name}</span>
+                <span className="suggestion-meta">{s.protein_g}g protein</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="protein-estimate-row">
         <div className="field">

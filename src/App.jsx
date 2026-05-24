@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { BRAND } from './branding.js'
 import {
   InstallButton, InstallModal, InstallNudge, InstallSuccessToast,
@@ -351,7 +351,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
         </div>
       </div>
 
-      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} />
+      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} entries={entries} />
 
       <div className="card">
         <h2>Today's Entries ({todays.length})</h2>
@@ -373,7 +373,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
   )
 }
 
-function AddEntry({ onAdd, recipes, defaultDate }) {
+function AddEntry({ onAdd, recipes, defaultDate, entries }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('Breakfast')
   const [desc, setDesc] = useState('')
@@ -381,8 +381,64 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [editing, setEditing] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+
+  const suggestions = useMemo(() => {
+    const list = []
+    // Add recipes
+    for (const r of recipes) {
+      list.push({
+        name: r.Recipe,
+        calories: num(r.Calories),
+        protein_g: num(r['Protein (g)']),
+        calcium_mg: num(r['Calcium (mg)']),
+        veg_servings: 0,
+        omega3: 'N',
+        source: 'recipe'
+      })
+    }
+    // Add unique entries from history, most recent first
+    const seen = new Set(list.map(s => s.name.toLowerCase()))
+    for (const e of entries) {
+      const name = e['Food Description'] || ''
+      if (name && !seen.has(name.toLowerCase())) {
+        list.push({
+          name,
+          calories: num(e.Calories),
+          protein_g: num(e['Protein (g)']),
+          calcium_mg: num(e['Calcium (mg)']),
+          veg_servings: num(e['Veg Servings']),
+          omega3: e['Omega-3'] === 'Y' ? 'Y' : 'N',
+          source: 'history'
+        })
+        seen.add(name.toLowerCase())
+      }
+    }
+    return list
+  }, [recipes, entries])
+
+  const filteredSuggestions = useMemo(() => {
+    const query = desc.trim().toLowerCase()
+    if (!query) return []
+    return suggestions
+      .filter(s => s.name.toLowerCase().includes(query))
+      .slice(0, 6)
+  }, [suggestions, desc])
+
+  const selectSuggestion = (s) => {
+    setDesc(s.name)
+    setPreview({
+      calories: s.calories,
+      protein_g: s.protein_g,
+      calcium_mg: s.calcium_mg,
+      veg_servings: s.veg_servings,
+      omega3: s.omega3,
+      confidence: 'high'
+    })
+    setShowSuggestions(false)
+  }
 
   const estimate = async () => {
     if (!desc.trim()) return
@@ -438,7 +494,21 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
           placeholder="e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts"
           value={desc}
           onChange={e => setDesc(e.target.value)}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
         />
+        {showSuggestions && filteredSuggestions.length > 0 && (
+          <div className="suggestions-list">
+            {filteredSuggestions.map((s, i) => (
+              <div key={i} className="suggestion-item" onClick={() => selectSuggestion(s)}>
+                <span className="suggestion-name">{s.name}</span>
+                <span className="suggestion-meta">
+                  {s.calories} kcal · {s.protein_g}g protein · {s.source}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {err && <div className="banner error">{err}</div>}
