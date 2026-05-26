@@ -132,7 +132,6 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   const loadAll = useCallback(async () => {
     if (!storageReady) return
     try {
-      await storage.scaffold(true)
       const curKey = currentMonthKey()
       const curName = entryFileName('protein', curKey)
       const [logText, goalsText, sysText] = await Promise.all([

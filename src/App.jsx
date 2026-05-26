@@ -131,7 +131,6 @@ export default function App() {
   const loadAll = useCallback(async () => {
     if (!storageReady) return
     try {
-      await storage.scaffold(resolvedMode === 'simple')
       const curKey = currentMonthKey()
       const curName = entryFileName('entries', curKey)
       const [curText, goalsText, recipesText] = await Promise.all([

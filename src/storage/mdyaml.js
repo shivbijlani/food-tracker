@@ -126,12 +126,3 @@ export function writeEntries(originalContent, headers, entries, metaOverrides = 
   return serializeFrontmatter(meta, newBody.startsWith('\n') ? newBody : '\n' + newBody)
 }
 
-/** Build a scaffold file with frontmatter + empty table. */
-export function scaffoldFile({ kind, headers, title, mode, period }) {
-  const meta = { schemaVersion: 1, kind }
-  if (mode) meta.mode = mode
-  if (period) meta.period = period
-  meta.columns = headers
-  const body = `\n# ${title}\n\n${serializeTable(headers, [])}\n`
-  return serializeFrontmatter(meta, body)
-}

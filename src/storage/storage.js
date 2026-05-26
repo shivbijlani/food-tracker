@@ -21,7 +21,6 @@ import {
   googleDriveProvider,
   mockProvider,
 } from '@shivbijlani/folder-sync'
-import { scaffoldFile } from './mdyaml.js'
 
 // ---- Public provider IDs (now: only local primary) ----
 export const PROVIDERS = Object.freeze({
@@ -166,117 +165,9 @@ export const storage = {
   async writeFile(name, contents) { return _engine.writeFile(name, contents) },
   async deleteFile(name) { return _engine.deleteFile(name) },
   async listFiles() { return _engine.listFiles() },
-
-  /**
-   * Create initial scaffold files if they don't exist. Mode-aware.
-   * Lives here (not in adapters) because scaffold content is app-specific.
-   *
-   * Sync-aware: if a cloud provider is connected and we're online, wait for
-   * the first sync cycle to complete before checking whether each scaffold
-   * file exists. Without this, a fresh page load would write stub files
-   * locally and enqueue them for upload *before* the SW had a chance to
-   * pull the user's real files down from the cloud — clobbering them.
-   */
-  async scaffold(isSimpleMode = false) {
-    const safe = await waitForFirstSync()
-    // If we timed out waiting for the first sync, do NOT scaffold. Writing
-    // stub files now would race the eventual pull and could overwrite the
-    // user's real cloud copies. They can reload to retry; meanwhile the
-    // app still works against whatever the local mirror contains.
-    if (!safe) return
-    const files = isSimpleMode ? scaffoldSimple() : scaffoldAdvanced()
-    for (const [name, content] of files) {
-      const existing = await _engine.readFile(name)
-      if (!existing) await _engine.writeFile(name, content)
-    }
-  },
 }
 
 if (typeof window !== 'undefined' && import.meta.env?.DEV) {
   window.__storage = storage
   window.__getEngine = getEngine
-}
-
-/**
- * Resolve `true` once it's safe to scaffold default files without risk of
- * overwriting remote content. Resolves `false` if we hit the hard timeout
- * — caller should skip scaffolding in that case.
- *
- * Safe when:
- *   - no providers are configured (purely local app), OR
- *   - no providers are connected (user hasn't enabled cloud sync), OR
- *   - the user is offline (no remote to clobber — sync queue will reconcile
- *     when they come back online), OR
- *   - the connected provider has completed at least one sync cycle this
- *     session (overall state transitions to 'synced', 'idle', 'error', or
- *     'reconnect-required' after the initial 'syncing' phase).
- */
-const FIRST_SYNC_TIMEOUT_MS = 15_000
-let _firstSyncPromise = null
-function waitForFirstSync() {
-  if (_firstSyncPromise) return _firstSyncPromise
-  _firstSyncPromise = new Promise((resolve) => {
-    if (!_engine) return resolve(true)
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return resolve(true)
-
-    if (typeof _engine.listProviders === 'function' && _engine.listProviders().length === 0) {
-      return resolve(true)
-    }
-
-    let done = false
-    let sawConnectedProvider = false
-    const finish = (safe) => {
-      if (done) return
-      done = true
-      clearTimeout(timer)
-      try { unsub() } catch { /* ignore */ }
-      resolve(safe)
-    }
-
-    const FATAL = new Set(['error', 'reconnect-required', 'offline'])
-
-    const check = (s) => {
-      const provs = s?.providers || {}
-      const connected = Object.values(provs).some(p => p?.connected)
-      if (connected) sawConnectedProvider = true
-
-      // Resolve early if we previously saw a connected provider and now
-      // none are connected — means the user explicitly disconnected mid-
-      // session. We deliberately do NOT exit on the first emission with no
-      // connected flag: token-restore runs async, so the initial status
-      // often shows providers without connected:true for a brief moment.
-      // Exiting there would race the SW's first pull and let scaffold
-      // clobber the user's real cloud files.
-      if (!connected && Object.keys(provs).length > 0 && sawConnectedProvider) return finish(true)
-
-      if (s?.lastSync) return finish(true)
-      if (s?.state && FATAL.has(s.state)) return finish(true)
-      if (Object.values(provs).some(p => p?.state && FATAL.has(p.state))) return finish(true)
-    }
-
-    const unsub = _engine.subscribe(check)
-    const timer = setTimeout(() => finish(false), FIRST_SYNC_TIMEOUT_MS)
-  })
-  return _firstSyncPromise
-}
-
-const GOALS_COLS = ['Nutrient','Target','Notes']
-const RECIPE_COLS = ['Recipe','Servings','Calories','Protein (g)','Calcium (mg)','Notes']
-
-function scaffoldAdvanced() {
-  const goalsContent = scaffoldFile({ kind: 'goals', headers: GOALS_COLS, title: 'Goals' })
-    .replace(/\| Nutrient \| Target \| Notes \|\n\|[^\n]+\|\n/, m => m + '| Calories | 2000 | Daily target |\n| Protein | 120g | Daily target |\n')
-  return [
-    ['goals.md', goalsContent],
-    ['recipes.md', scaffoldFile({ kind: 'recipes', headers: RECIPE_COLS, title: 'Recipes' })],
-  ]
-}
-
-function scaffoldSimple() {
-  const goalsContent = scaffoldFile({ kind: 'goals', headers: GOALS_COLS, title: 'Goals' })
-    .replace(/\| Nutrient \| Target \| Notes \|\n\|[^\n]+\|\n/, m => m + '| Protein | 120g | Daily target |\n')
-  return [
-    ['goals.md', goalsContent],
-    ['systems.md', `---\nschemaVersion: 1\nkind: notes\n---\n\n# Systems\n\nDaily protein tracking with success/failure framework.\n`],
-  ]
 }
