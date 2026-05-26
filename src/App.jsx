@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { BRAND } from './branding.js'
 import {
   InstallButton, InstallModal, InstallNudge, InstallSuccessToast,
@@ -19,6 +19,7 @@ import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
+import AutocompleteInput from './AutocompleteInput.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -351,7 +352,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
         </div>
       </div>
 
-      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} />
+      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} entries={entries} />
 
       <div className="card">
         <h2>Today's Entries ({todays.length})</h2>
@@ -373,7 +374,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
   )
 }
 
-function AddEntry({ onAdd, recipes, defaultDate }) {
+function AddEntry({ onAdd, recipes, defaultDate, entries = [] }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('Breakfast')
   const [desc, setDesc] = useState('')
@@ -383,6 +384,53 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
   const [editing, setEditing] = useState(false)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+
+  // Build suggestion list: recipes first, then historical entries, deduped by name.
+  const suggestions = useMemo(() => {
+    const list = []
+    const seen = new Set()
+    for (const r of recipes) {
+      const name = r.Recipe
+      if (name && !seen.has(name.toLowerCase())) {
+        list.push({
+          name,
+          protein: num(r['Protein (g)']),
+          calories: num(r.Calories),
+          calcium_mg: num(r['Calcium (mg)']),
+          veg_servings: 0,
+          omega3: 'N',
+        })
+        seen.add(name.toLowerCase())
+      }
+    }
+    for (const e of entries) {
+      const name = e['Food Description']
+      if (name && !seen.has(name.toLowerCase())) {
+        list.push({
+          name,
+          protein: num(e['Protein (g)']),
+          calories: num(e.Calories),
+          calcium_mg: num(e['Calcium (mg)']),
+          veg_servings: num(e['Veg Servings']),
+          omega3: e['Omega-3'] || 'N',
+        })
+        seen.add(name.toLowerCase())
+      }
+    }
+    return list
+  }, [recipes, entries])
+
+  const selectSuggestion = (s) => {
+    setDesc(s.name)
+    setPreview({
+      calories: s.calories,
+      protein_g: s.protein,
+      calcium_mg: s.calcium_mg,
+      veg_servings: s.veg_servings,
+      omega3: s.omega3 || 'N',
+      confidence: 'high',
+    })
+  }
 
   const estimate = async () => {
     if (!desc.trim()) return
@@ -434,10 +482,13 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
       </div>
       <div className="field">
         <label>Food description</label>
-        <textarea
-          placeholder="e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts"
+        <AutocompleteInput
           value={desc}
-          onChange={e => setDesc(e.target.value)}
+          onChange={setDesc}
+          suggestions={suggestions}
+          onSelect={selectSuggestion}
+          placeholder="e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts"
+          rows={3}
         />
       </div>
 
