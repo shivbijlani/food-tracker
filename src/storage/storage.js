@@ -185,9 +185,11 @@ export const storage = {
     // app still works against whatever the local mirror contains.
     if (!safe) return
     const files = isSimpleMode ? scaffoldSimple() : scaffoldAdvanced()
+    const existingNames = await _engine.listFiles()
     for (const [name, content] of files) {
-      const existing = await _engine.readFile(name)
-      if (!existing) await _engine.writeFile(name, content)
+      if (!existingNames.includes(name)) {
+        await _engine.writeFile(name, content)
+      }
     }
   },
 }
