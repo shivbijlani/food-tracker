@@ -11,6 +11,7 @@ import {
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
+import { parseCSV, serializeCSV } from './storage/csv.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
@@ -67,6 +68,7 @@ export default function App() {
   const [logEntries, setLogEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [recipes, setRecipes] = useState([])
+  const [suggestions, setSuggestions] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   // Mode state — respect explicit user choice; auto-detect from data on first load.
@@ -134,14 +136,23 @@ export default function App() {
     try {
       const curKey = currentMonthKey()
       const curName = entryFileName('entries', curKey)
-      const [curText, goalsText, recipesText] = await Promise.all([
+      const [curText, goalsText, recipesText, suggestionsText] = await Promise.all([
         storage.readFile(curName),
         storage.readFile('goals.md'),
         storage.readFile('recipes.md'),
+        storage.readFile('suggestions.csv').catch(() => ''),
       ])
       setLogEntries(readEntries(curText, DAILY_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setRecipes(readEntries(recipesText, RECIPE_HEADERS).rows)
+      setSuggestions(parseCSV(suggestionsText).map(s => ({
+        name: s.name,
+        calories: num(s.calories),
+        protein: num(s.protein),
+        calcium_mg: num(s.calcium),
+        veg_servings: num(s.veg),
+        omega3: s.omega3 || 'N',
+      })))
       setError('')
 
       // Lazy-load history in the background.
@@ -213,7 +224,40 @@ export default function App() {
     setRecipes(newRecipes)
   }
 
+  const saveSuggestion = async (entry) => {
+    try {
+      const csvText = await storage.readFile('suggestions.csv').catch(() => '')
+      const rows = parseCSV(csvText)
+      const name = entry['Food Description']
+      if (!name) return
+      if (rows.some(r => r.name.toLowerCase() === name.toLowerCase())) return
+
+      const newSuggestion = {
+        name,
+        calories: entry.Calories,
+        protein: entry['Protein (g)'],
+        calcium: entry['Calcium (mg)'],
+        veg: entry['Veg Servings'],
+        omega3: entry['Omega-3'],
+      }
+      const nextRows = [...rows, newSuggestion]
+      const nextCsv = serializeCSV(['name', 'calories', 'protein', 'calcium', 'veg', 'omega3'], nextRows)
+      await storage.writeFile('suggestions.csv', nextCsv)
+      setSuggestions(nextRows.map(s => ({
+        name: s.name,
+        calories: num(s.calories),
+        protein: num(s.protein),
+        calcium_mg: num(s.calcium),
+        veg_servings: num(s.veg),
+        omega3: s.omega3 || 'N',
+      })))
+    } catch (e) {
+      console.error('Failed to save suggestion:', e)
+    }
+  }
+
   const addEntry = async (entry) => {
+    await saveSuggestion(entry)
     await saveLog(mergeEntry(logEntries, entry, 'advanced'))
   }
 
@@ -287,7 +331,7 @@ export default function App() {
       {/* Coaching tip — shown on load if LLM connected, refreshed after each save */}
       <CoachingCard text={coaching} onDismiss={() => setCoaching(null)} />
 
-      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} />}
+      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
@@ -307,7 +351,7 @@ export default function App() {
   )
 }
 
-function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
+function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggestions }) {
   const today = todayStr()
   const todays = entries.filter(e => e.Date === today)
 
@@ -351,7 +395,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
         </div>
       </div>
 
-      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} entries={entries} />
+      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} entries={entries} suggestions={suggestions} />
 
       <div className="card">
         <h2>Today's Entries ({todays.length})</h2>
@@ -373,7 +417,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
   )
 }
 
-function AddEntry({ onAdd, recipes, defaultDate, entries = [] }) {
+function AddEntry({ onAdd, recipes, defaultDate, entries = [], suggestions = [] }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('Breakfast')
   const [desc, setDesc] = useState('')
@@ -384,40 +428,46 @@ function AddEntry({ onAdd, recipes, defaultDate, entries = [] }) {
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
-  // Build suggestion list: recipes first, then historical entries, deduped by name.
-  const suggestions = useMemo(() => {
+  // Build suggestion list: recipes first, then suggestions.csv, then historical entries, deduped by name.
+  const allSuggestions = useMemo(() => {
     const list = []
     const seen = new Set()
-    for (const r of recipes) {
-      const name = r.Recipe
+    const add = (name, data) => {
       if (name && !seen.has(name.toLowerCase())) {
-        list.push({
-          name,
-          protein: num(r['Protein (g)']),
-          calories: num(r.Calories),
-          calcium_mg: num(r['Calcium (mg)']),
-          veg_servings: 0,
-          omega3: 'N',
-        })
+        list.push({ name, ...data })
         seen.add(name.toLowerCase())
       }
+    }
+
+    for (const r of recipes) {
+      add(r.Recipe, {
+        protein: num(r['Protein (g)']),
+        calories: num(r.Calories),
+        calcium_mg: num(r['Calcium (mg)']),
+        veg_servings: 0,
+        omega3: 'N',
+      })
+    }
+    for (const s of suggestions) {
+      add(s.name, {
+        protein: s.protein,
+        calories: s.calories,
+        calcium_mg: s.calcium_mg,
+        veg_servings: s.veg_servings,
+        omega3: s.omega3,
+      })
     }
     for (const e of entries) {
-      const name = e['Food Description']
-      if (name && !seen.has(name.toLowerCase())) {
-        list.push({
-          name,
-          protein: num(e['Protein (g)']),
-          calories: num(e.Calories),
-          calcium_mg: num(e['Calcium (mg)']),
-          veg_servings: num(e['Veg Servings']),
-          omega3: e['Omega-3'] || 'N',
-        })
-        seen.add(name.toLowerCase())
-      }
+      add(e['Food Description'], {
+        protein: num(e['Protein (g)']),
+        calories: num(e.Calories),
+        calcium_mg: num(e['Calcium (mg)']),
+        veg_servings: num(e['Veg Servings']),
+        omega3: e['Omega-3'] || 'N',
+      })
     }
     return list
-  }, [recipes, entries])
+  }, [recipes, suggestions, entries])
 
   const selectSuggestion = (s) => {
     setDesc(s.name)
@@ -484,7 +534,7 @@ function AddEntry({ onAdd, recipes, defaultDate, entries = [] }) {
         <AutocompleteInput
           value={desc}
           onChange={setDesc}
-          suggestions={suggestions}
+          suggestions={allSuggestions}
           onSelect={selectSuggestion}
           placeholder="e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts"
           rows={3}

@@ -9,6 +9,7 @@ import { PROTEIN_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS } from './storage/ma
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
+import { parseCSV, serializeCSV } from './storage/csv.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import * as llm from './llm.js'
 import AutocompleteInput from './AutocompleteInput.jsx'
@@ -114,6 +115,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [recipes, setRecipes] = useState([])
+  const [suggestions, setSuggestions] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -137,16 +139,22 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     try {
       const curKey = currentMonthKey()
       const curName = entryFileName('protein', curKey)
-      const [logText, goalsText, sysText, recipesText] = await Promise.all([
+      const [logText, goalsText, sysText, recipesText, suggestionsText] = await Promise.all([
         storage.readFile(curName).catch(() => ''),
         storage.readFile('goals.md').catch(() => ''),
         storage.readFile('systems.md').catch(() => ''),
         storage.readFile('recipes.md').catch(() => ''),
+        storage.readFile('suggestions.csv').catch(() => ''),
       ])
       setEntries(readEntries(logText, PROTEIN_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setSystemsText(sysText)
       setRecipes(readEntries(recipesText, RECIPE_HEADERS).rows)
+      setSuggestions(parseCSV(suggestionsText).map(s => ({
+        name: s.name,
+        protein: num(s.protein),
+        calories: num(s.calories),
+      })))
       setError('')
 
       // Lazy-load history.
@@ -211,7 +219,37 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     setEntries(sorted)
   }
 
+  const saveSuggestion = async (entry) => {
+    try {
+      const csvText = await storage.readFile('suggestions.csv').catch(() => '')
+      const rows = parseCSV(csvText)
+      const name = entry.Meal
+      if (!name) return
+      if (rows.some(r => r.name.toLowerCase() === name.toLowerCase())) return
+
+      const newSuggestion = {
+        name,
+        protein: entry['Protein (g)'],
+        calories: '', // Simple mode doesn't track calories
+        calcium: '',
+        veg: '',
+        omega3: '',
+      }
+      const nextRows = [...rows, newSuggestion]
+      const nextCsv = serializeCSV(['name', 'calories', 'protein', 'calcium', 'veg', 'omega3'], nextRows)
+      await storage.writeFile('suggestions.csv', nextCsv)
+      setSuggestions(nextRows.map(s => ({
+        name: s.name,
+        protein: num(s.protein),
+        calories: num(s.calories),
+      })))
+    } catch (e) {
+      console.error('Failed to save suggestion:', e)
+    }
+  }
+
   const addEntry = async (entry) => {
+    await saveSuggestion(entry)
     await saveLog(mergeEntry(entries, entry, 'simple'))
   }
 
@@ -349,6 +387,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
             onAfterSave={requestCoaching}
             entries={entries}
             recipes={recipes}
+            suggestions={suggestions}
           />
         )}
       </div>
@@ -453,7 +492,7 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
   )
 }
 
-function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes = [] }) {
+function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes = [], suggestions = [] }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('')
   const [protein, setProtein] = useState('')
@@ -466,26 +505,28 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
-  // Build suggestion list: recipes first, then historical entries, deduped by name.
-  const suggestions = useMemo(() => {
+  // Build suggestion list: recipes first, then suggestions.csv, then historical entries, deduped by name.
+  const allSuggestions = useMemo(() => {
     const list = []
     const seen = new Set()
-    for (const r of recipes) {
-      const name = r.Recipe
+    const add = (name, data) => {
       if (name && !seen.has(name.toLowerCase())) {
-        list.push({ name, protein: num(r['Protein (g)']), calories: num(r.Calories) })
+        list.push({ name, ...data })
         seen.add(name.toLowerCase())
       }
+    }
+
+    for (const r of recipes) {
+      add(r.Recipe, { protein: num(r['Protein (g)']), calories: num(r.Calories) })
+    }
+    for (const s of suggestions) {
+      add(s.name, { protein: s.protein, calories: s.calories })
     }
     for (const e of entries) {
-      const name = e.Meal
-      if (name && !seen.has(name.toLowerCase())) {
-        list.push({ name, protein: num(e['Protein (g)']), calories: null })
-        seen.add(name.toLowerCase())
-      }
+      add(e.Meal, { protein: num(e['Protein (g)']), calories: null })
     }
     return list
-  }, [recipes, entries])
+  }, [recipes, suggestions, entries])
 
   const selectSuggestion = (s) => {
     setMeal(s.name)
@@ -550,7 +591,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes
         <AutocompleteInput
           value={meal}
           onChange={setMeal}
-          suggestions={suggestions}
+          suggestions={allSuggestions}
           onSelect={selectSuggestion}
           placeholder="e.g. 2 eggs, Greek yogurt, protein shake"
           type="text"
