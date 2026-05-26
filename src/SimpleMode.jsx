@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { BRAND } from './branding.js'
 import { storage, getEngine } from './storage/storage.js'
 import { debounce } from './debounce.js'
 import { StatusBadge } from './StatusBadge.jsx'
 import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
-import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
+import { PROTEIN_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
@@ -109,8 +109,10 @@ function MarkdownView({ text }) {
   return <div className="systems-content">{blocks}</div>
 }
 
-export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider, syncStatus }) {  const [entries, setEntries] = useState([])
+export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider, syncStatus }) {
+  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
+  const [recipes, setRecipes] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -135,14 +137,16 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
       await storage.scaffold(true)
       const curKey = currentMonthKey()
       const curName = entryFileName('protein', curKey)
-      const [logText, goalsText, sysText] = await Promise.all([
+      const [logText, goalsText, sysText, recipesText] = await Promise.all([
         storage.readFile(curName).catch(() => ''),
         storage.readFile('goals.md').catch(() => ''),
         storage.readFile('systems.md').catch(() => ''),
+        storage.readFile('recipes.md').catch(() => ''),
       ])
       setEntries(readEntries(logText, PROTEIN_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setSystemsText(sysText)
+      setRecipes(readEntries(recipesText, RECIPE_HEADERS).rows)
       setError('')
 
       // Lazy-load history.
@@ -343,6 +347,8 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
             onAdd={addEntry}
             defaultDate={today}
             onAfterSave={requestCoaching}
+            entries={entries}
+            recipes={recipes}
           />
         )}
       </div>
@@ -447,18 +453,55 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
   )
 }
 
-function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
+function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes = [] }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('')
   const [protein, setProtein] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   // Re-evaluate LLM readiness on each render — cheap (localStorage read).
   const llmReady = llm.isReady()
   const proteinFilled = protein !== '' && Number(protein) >= 0
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+
+  const suggestions = useMemo(() => {
+    const list = []
+    const seen = new Set()
+    // 1. Recipes
+    for (const r of recipes) {
+      const name = r.Recipe
+      if (name && !seen.has(name.toLowerCase())) {
+        list.push({ name, protein: num(r['Protein (g)']), source: 'recipe' })
+        seen.add(name.toLowerCase())
+      }
+    }
+    // 2. Historical entries
+    for (const e of entries) {
+      const name = e.Meal
+      if (name && !seen.has(name.toLowerCase())) {
+        list.push({ name, protein: num(e['Protein (g)']), source: 'history' })
+        seen.add(name.toLowerCase())
+      }
+    }
+    return list
+  }, [recipes, entries])
+
+  const filteredSuggestions = useMemo(() => {
+    const query = meal.trim().toLowerCase()
+    if (!query) return []
+    return suggestions
+      .filter(s => s.name.toLowerCase().includes(query))
+      .slice(0, 6)
+  }, [suggestions, meal])
+
+  const selectSuggestion = (s) => {
+    setMeal(s.name)
+    setProtein(String(s.protein || ''))
+    setShowSuggestions(false)
+  }
 
   const estimate = async () => {
     if (!meal.trim()) return
@@ -519,8 +562,23 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
           type="text"
           placeholder="e.g. 2 eggs, Greek yogurt, protein shake"
           value={meal}
-          onChange={e => setMeal(e.target.value)}
+          onChange={e => {
+            setMeal(e.target.value)
+            setShowSuggestions(true)
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
         />
+        {showSuggestions && filteredSuggestions.length > 0 && (
+          <div className="suggestions-list">
+            {filteredSuggestions.map((s, i) => (
+              <div key={i} className="suggestion-item" onClick={() => selectSuggestion(s)}>
+                <span className="suggestion-name">{s.name}</span>
+                <span className="suggestion-meta">{s.protein}g protein · {s.source}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="protein-estimate-row">
         <div className="field">
