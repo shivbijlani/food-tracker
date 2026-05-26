@@ -6,10 +6,12 @@ import { StatusBadge } from './StatusBadge.jsx'
 import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS } from './storage/markdown.js'
+import { parseCSV, serializeCSV } from './storage/csv.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
+import AutocompleteInput from './AutocompleteInput.jsx'
 import * as llm from './llm.js'
 
 const todayStr = () => {
@@ -109,8 +111,11 @@ function MarkdownView({ text }) {
   return <div className="systems-content">{blocks}</div>
 }
 
+const SUGGESTIONS_HEADERS = ['name', 'calories', 'protein', 'calcium', 'veg', 'omega3']
+
 export default function SimpleMode({ storageReady, folderName, mode, setMode, storageProvider, syncStatus }) {  const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
+  const [suggestions, setSuggestions] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -135,14 +140,16 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
       await storage.scaffold(true)
       const curKey = currentMonthKey()
       const curName = entryFileName('protein', curKey)
-      const [logText, goalsText, sysText] = await Promise.all([
+      const [logText, goalsText, sysText, suggestionsText] = await Promise.all([
         storage.readFile(curName).catch(() => ''),
         storage.readFile('goals.md').catch(() => ''),
         storage.readFile('systems.md').catch(() => ''),
+        storage.readFile('suggestions.csv').catch(() => ''),
       ])
       setEntries(readEntries(logText, PROTEIN_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setSystemsText(sysText)
+      setSuggestions(parseCSV(suggestionsText))
       setError('')
 
       // Lazy-load history.
@@ -187,6 +194,12 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
       unsub()
     }
   }, [storageReady, loadAll])
+
+  const saveSuggestions = async (newSuggestions) => {
+    const next = serializeCSV(SUGGESTIONS_HEADERS, newSuggestions)
+    await storage.writeFile('suggestions.csv', next)
+    setSuggestions(newSuggestions)
+  }
 
   const saveLog = async (newEntries) => {
     const sorted = [...newEntries].sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
@@ -343,6 +356,8 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
             onAdd={addEntry}
             defaultDate={today}
             onAfterSave={requestCoaching}
+            suggestions={suggestions}
+            onSaveSuggestion={(s) => saveSuggestions([...suggestions, s])}
           />
         )}
       </div>
@@ -447,12 +462,13 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
   )
 }
 
-function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
+function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions, onSaveSuggestion }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('')
   const [protein, setProtein] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [isSavedAsSuggestion, setIsSavedAsSuggestion] = useState(false)
 
   // Re-evaluate LLM readiness on each render — cheap (localStorage read).
   const llmReady = llm.isReady()
@@ -482,7 +498,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
       Meal: mealSnapshot,
       'Protein (g)': proteinSnapshot,
     })
-    setMeal(''); setProtein(''); setErr('')
+    setMeal(''); setProtein(''); setErr(''); setIsSavedAsSuggestion(false)
     onAfterSave?.(mealSnapshot, proteinSnapshot)
   }
 
@@ -515,11 +531,16 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
       </div>
       <div className="field">
         <label>Meal</label>
-        <input
-          type="text"
+        <AutocompleteInput
           placeholder="e.g. 2 eggs, Greek yogurt, protein shake"
           value={meal}
-          onChange={e => setMeal(e.target.value)}
+          onChange={(v) => { setMeal(v); setIsSavedAsSuggestion(false); }}
+          suggestions={suggestions}
+          onSelect={s => {
+            setMeal(s.name)
+            setProtein(String(s.protein || ''))
+            setIsSavedAsSuggestion(true)
+          }}
         />
       </div>
       <div className="protein-estimate-row">
@@ -551,6 +572,16 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave }) {
           <button className="btn" onClick={save} disabled={busy || !meal.trim()}>
             Save
           </button>
+        )}
+        {!isSavedAsSuggestion && meal.trim() && proteinFilled && (
+          <button className="btn btn-secondary" onClick={() => {
+            onSaveSuggestion({
+              name: meal.trim(),
+              protein: protein,
+              calories: '0', calcium: '0', veg: '0', omega3: 'N'
+            })
+            setIsSavedAsSuggestion(true)
+          }}>⭐ Suggest</button>
         )}
       </div>
     </div>

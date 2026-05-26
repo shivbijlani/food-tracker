@@ -262,6 +262,7 @@ function waitForFirstSync() {
 
 const GOALS_COLS = ['Nutrient','Target','Notes']
 const RECIPE_COLS = ['Recipe','Servings','Calories','Protein (g)','Calcium (mg)','Notes']
+const SUGGESTIONS_COLS = ['name', 'calories', 'protein', 'calcium', 'veg', 'omega3']
 
 function scaffoldAdvanced() {
   const goalsContent = scaffoldFile({ kind: 'goals', headers: GOALS_COLS, title: 'Goals' })
@@ -269,6 +270,7 @@ function scaffoldAdvanced() {
   return [
     ['goals.md', goalsContent],
     ['recipes.md', scaffoldFile({ kind: 'recipes', headers: RECIPE_COLS, title: 'Recipes' })],
+    ['suggestions.csv', SUGGESTIONS_COLS.join(',') + '\n'],
   ]
 }
 
@@ -278,5 +280,6 @@ function scaffoldSimple() {
   return [
     ['goals.md', goalsContent],
     ['systems.md', `---\nschemaVersion: 1\nkind: notes\n---\n\n# Systems\n\nDaily protein tracking with success/failure framework.\n`],
+    ['suggestions.csv', SUGGESTIONS_COLS.join(',') + '\n'],
   ]
 }

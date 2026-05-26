@@ -8,6 +8,7 @@ import { storage, getEngine, initStorage, detectModeFromData, registerSyncWorker
 import {
   DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
 } from './storage/markdown.js'
+import { parseCSV, serializeCSV } from './storage/csv.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
@@ -19,13 +20,17 @@ import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
+import AutocompleteInput from './AutocompleteInput.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
   { id: 'log', label: 'Log' },
   { id: 'recipes', label: 'Recipes' },
+  { id: 'suggestions', label: 'Suggestions' },
   { id: 'goals', label: 'Goals' },
 ]
+
+const SUGGESTIONS_HEADERS = ['name', 'calories', 'protein', 'calcium', 'veg', 'omega3']
 
 const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
 
@@ -66,6 +71,7 @@ export default function App() {
   const [logEntries, setLogEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [recipes, setRecipes] = useState([])
+  const [suggestions, setSuggestions] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   // Mode state — respect explicit user choice; auto-detect from data on first load.
@@ -134,14 +140,16 @@ export default function App() {
       await storage.scaffold(resolvedMode === 'simple')
       const curKey = currentMonthKey()
       const curName = entryFileName('entries', curKey)
-      const [curText, goalsText, recipesText] = await Promise.all([
+      const [curText, goalsText, recipesText, suggestionsText] = await Promise.all([
         storage.readFile(curName),
         storage.readFile('goals.md'),
         storage.readFile('recipes.md'),
+        storage.readFile('suggestions.csv'),
       ])
       setLogEntries(readEntries(curText, DAILY_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setRecipes(readEntries(recipesText, RECIPE_HEADERS).rows)
+      setSuggestions(parseCSV(suggestionsText))
       setError('')
 
       // Lazy-load history in the background.
@@ -211,6 +219,12 @@ export default function App() {
     const next = writeEntries(original, RECIPE_HEADERS, newRecipes, { kind: 'recipes' })
     await storage.writeFile('recipes.md', next)
     setRecipes(newRecipes)
+  }
+
+  const saveSuggestions = async (newSuggestions) => {
+    const next = serializeCSV(SUGGESTIONS_HEADERS, newSuggestions)
+    await storage.writeFile('suggestions.csv', next)
+    setSuggestions(newSuggestions)
   }
 
   const addEntry = async (entry) => {
@@ -287,9 +301,10 @@ export default function App() {
       {/* Coaching tip — shown on load if LLM connected, refreshed after each save */}
       <CoachingCard text={coaching} onDismiss={() => setCoaching(null)} />
 
-      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} />}
+      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} onSaveSuggestion={(s) => saveSuggestions([...suggestions, s])} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
+      {tab === 'suggestions' && <SuggestionsView suggestions={suggestions} onSave={saveSuggestions} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
       <InstallNudge onOpen={() => setInstallOpen(true)} appName={BRAND.appName} />
       <InstallSuccessToast appName={BRAND.appName} />
@@ -307,7 +322,7 @@ export default function App() {
   )
 }
 
-function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
+function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggestions, onSaveSuggestion }) {
   const today = todayStr()
   const todays = entries.filter(e => e.Date === today)
 
@@ -351,7 +366,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
         </div>
       </div>
 
-      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} />
+      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} suggestions={suggestions} onSaveSuggestion={onSaveSuggestion} />
 
       <div className="card">
         <h2>Today's Entries ({todays.length})</h2>
@@ -373,7 +388,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes }) {
   )
 }
 
-function AddEntry({ onAdd, recipes, defaultDate }) {
+function AddEntry({ onAdd, recipes, defaultDate, suggestions, onSaveSuggestion }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('Breakfast')
   const [desc, setDesc] = useState('')
@@ -381,6 +396,7 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [editing, setEditing] = useState(false)
+  const [isSavedAsSuggestion, setIsSavedAsSuggestion] = useState(false)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
@@ -412,7 +428,7 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
       Notes: '',
     }
     await onAdd(entry)
-    setDesc(''); setPreview(null); setErr(''); setEditing(false)
+    setDesc(''); setPreview(null); setErr(''); setEditing(false); setIsSavedAsSuggestion(false)
   }
 
   const updatePreview = (key, val) => setPreview(p => ({ ...p, [key]: val }))
@@ -434,10 +450,24 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
       </div>
       <div className="field">
         <label>Food description</label>
-        <textarea
+        <AutocompleteInput
           placeholder="e.g. 2 eggs, 1/2 avocado toast, 1 cup Greek yogurt with walnuts"
           value={desc}
-          onChange={e => setDesc(e.target.value)}
+          onChange={setDesc}
+          suggestions={suggestions}
+          onSelect={s => {
+            setDesc(s.name)
+            setPreview({
+              calories: Number(s.calories) || 0,
+              protein_g: Number(s.protein) || 0,
+              calcium_mg: Number(s.calcium) || 0,
+              veg_servings: Number(s.veg) || 0,
+              omega3: s.omega3 === 'Y' ? 'Y' : 'N',
+              confidence: 'high'
+            })
+          }}
+          rows={3}
+          className="w-full"
         />
       </div>
 
@@ -481,12 +511,25 @@ function AddEntry({ onAdd, recipes, defaultDate }) {
               </>
             )}
           </div>
-          <div className="flex gap-8" style={{ marginTop: 12 }}>
+          <div className="flex gap-8" style={{ marginTop: 12, flexWrap: 'wrap' }}>
             <button className="btn" onClick={save}>Save entry</button>
             <button className="btn btn-secondary" onClick={() => setEditing(!editing)}>
               {editing ? 'Done editing' : 'Edit values'}
             </button>
-            <button className="btn btn-secondary" onClick={() => setPreview(null)}>Discard</button>
+            {!isSavedAsSuggestion && (
+              <button className="btn btn-secondary" onClick={() => {
+                onSaveSuggestion({
+                  name: desc.trim(),
+                  calories: preview.calories,
+                  protein: preview.protein_g,
+                  calcium: preview.calcium_mg,
+                  veg: preview.veg_servings,
+                  omega3: preview.omega3
+                })
+                setIsSavedAsSuggestion(true)
+              }}>⭐ Save as suggestion</button>
+            )}
+            <button className="btn btn-secondary" onClick={() => { setPreview(null); setIsSavedAsSuggestion(false) }}>Discard</button>
           </div>
         </div>
       )}
@@ -677,6 +720,82 @@ function RecipesView({ recipes, onSave }) {
         </div>
         <div className="field"><label>Notes</label><input value={draft.Notes} onChange={e => setDraft({ ...draft, Notes: e.target.value })} /></div>
         <button className="btn" onClick={add} disabled={!draft.Recipe.trim()}>Add recipe</button>
+      </div>
+    </>
+  )
+}
+
+function SuggestionsView({ suggestions, onSave }) {
+  const [draft, setDraft] = useState({ name: '', calories: '', protein: '', calcium: '', veg: '', omega3: 'N' })
+
+  const add = async () => {
+    if (!draft.name.trim()) return
+    await onSave([...suggestions, draft])
+    setDraft({ name: '', calories: '', protein: '', calcium: '', veg: '', omega3: 'N' })
+  }
+
+  const remove = async (i) => {
+    await onSave(suggestions.filter((_, j) => j !== i))
+  }
+
+  return (
+    <>
+      <div className="card">
+        <h2>Suggestions ({suggestions.length})</h2>
+        <p className="muted">Frequently tracked meals. They appear as you type in the "Food description" field.</p>
+        {suggestions.length === 0 ? (
+          <div className="empty">No suggestions yet.</div>
+        ) : (
+          <div className="recipes-table-wrap">
+            <table className="simple recipes-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>kcal</th>
+                  <th>pro</th>
+                  <th>Ca</th>
+                  <th>veg</th>
+                  <th>ω-3</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {suggestions.map((s, i) => (
+                  <tr key={i}>
+                    <td>{s.name}</td>
+                    <td>{s.calories}</td>
+                    <td>{s.protein}</td>
+                    <td>{s.calcium}</td>
+                    <td>{s.veg}</td>
+                    <td>{s.omega3}</td>
+                    <td><button className="icon-btn" onClick={() => remove(i)}>🗑</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Add suggestion</h3>
+        <div className="field"><label>Name</label><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. 2 eggs" /></div>
+        <div className="row">
+          <div className="field"><label>Calories</label><input type="number" value={draft.calories} onChange={e => setDraft({ ...draft, calories: e.target.value })} /></div>
+          <div className="field"><label>Protein (g)</label><input type="number" value={draft.protein} onChange={e => setDraft({ ...draft, protein: e.target.value })} /></div>
+          <div className="field"><label>Calcium (mg)</label><input type="number" value={draft.calcium} onChange={e => setDraft({ ...draft, calcium: e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div className="field"><label>Veg Servings</label><input type="number" step="0.5" value={draft.veg} onChange={e => setDraft({ ...draft, veg: e.target.value })} /></div>
+          <div className="field">
+            <label>Omega-3</label>
+            <select value={draft.omega3} onChange={e => setDraft({ ...draft, omega3: e.target.value })}>
+              <option value="N">No</option>
+              <option value="Y">Yes</option>
+            </select>
+          </div>
+        </div>
+        <button className="btn" onClick={add} disabled={!draft.name.trim()}>Add suggestion</button>
       </div>
     </>
   )
