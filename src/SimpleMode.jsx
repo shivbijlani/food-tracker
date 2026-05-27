@@ -15,7 +15,6 @@ import {
   serializeSuggestions,
   upsertSuggestion,
   expandWithHalves,
-  backfillFromHistory,
 } from './storage/suggestions.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import * as llm from './llm.js'
@@ -159,15 +158,13 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
       setSystemsText(sysText)
       const recipeRows = readEntries(recipesText, RECIPE_HEADERS).rows
       setRecipes(recipeRows)
-      const hasSuggestionsFile = suggestionsText != null && suggestionsText !== ''
       setSuggestions(parseSuggestions(suggestionsText || ''))
       setError('')
 
-      // Lazy-load history.
+      // Lazy-load history (for LogView).
       setLoadingHistory(true)
       const months = await listMonthFiles(storage, 'protein')
       const rest = months.filter(m => m.monthKey !== curKey)
-      let allHistory = curRows
       if (rest.length) {
         const texts = await Promise.all(rest.map(m => storage.readFile(m.name).catch(() => '')))
         const histRows = texts.flatMap(t => readEntries(t, PROTEIN_LOG_HEADERS).rows)
@@ -176,21 +173,8 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
           merged.sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
           return merged
         })
-        allHistory = [...allHistory, ...histRows]
       }
       setLoadingHistory(false)
-
-      // One-time backfill of suggestions.csv from existing history + recipes.
-      if (!hasSuggestionsFile && (allHistory.length > 0 || recipeRows.length > 0)) {
-        const seeded = backfillFromHistory({
-          simpleEntries: allHistory,
-          recipes: recipeRows,
-        })
-        if (seeded.length > 0) {
-          await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(seeded))
-          setSuggestions(seeded)
-        }
-      }
     } catch (e) {
       setError(`Load error: ${e.message}`)
       setLoadingHistory(false)
