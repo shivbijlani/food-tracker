@@ -9,6 +9,14 @@ import { PROTEIN_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS } from './storage/ma
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
 import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
+import {
+  SUGGESTIONS_FILE,
+  parseSuggestions,
+  serializeSuggestions,
+  upsertSuggestion,
+  expandWithHalves,
+  backfillFromHistory,
+} from './storage/suggestions.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import * as llm from './llm.js'
 import AutocompleteInput from './AutocompleteInput.jsx'
@@ -114,6 +122,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [recipes, setRecipes] = useState([])
+  const [suggestions, setSuggestions] = useState([])
   const [systemsText, setSystemsText] = useState('')
   const [error, setError] = useState('')
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -137,22 +146,28 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     try {
       const curKey = currentMonthKey()
       const curName = entryFileName('protein', curKey)
-      const [logText, goalsText, sysText, recipesText] = await Promise.all([
+      const [logText, goalsText, sysText, recipesText, suggestionsText] = await Promise.all([
         storage.readFile(curName).catch(() => ''),
         storage.readFile('goals.md').catch(() => ''),
         storage.readFile('systems.md').catch(() => ''),
         storage.readFile('recipes.md').catch(() => ''),
+        storage.readFile(SUGGESTIONS_FILE).catch(() => ''),
       ])
-      setEntries(readEntries(logText, PROTEIN_LOG_HEADERS).rows)
+      const curRows = readEntries(logText, PROTEIN_LOG_HEADERS).rows
+      setEntries(curRows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       setSystemsText(sysText)
-      setRecipes(readEntries(recipesText, RECIPE_HEADERS).rows)
+      const recipeRows = readEntries(recipesText, RECIPE_HEADERS).rows
+      setRecipes(recipeRows)
+      const hasSuggestionsFile = suggestionsText != null && suggestionsText !== ''
+      setSuggestions(parseSuggestions(suggestionsText || ''))
       setError('')
 
       // Lazy-load history.
       setLoadingHistory(true)
       const months = await listMonthFiles(storage, 'protein')
       const rest = months.filter(m => m.monthKey !== curKey)
+      let allHistory = curRows
       if (rest.length) {
         const texts = await Promise.all(rest.map(m => storage.readFile(m.name).catch(() => '')))
         const histRows = texts.flatMap(t => readEntries(t, PROTEIN_LOG_HEADERS).rows)
@@ -161,8 +176,21 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
           merged.sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
           return merged
         })
+        allHistory = [...allHistory, ...histRows]
       }
       setLoadingHistory(false)
+
+      // One-time backfill of suggestions.csv from existing history + recipes.
+      if (!hasSuggestionsFile && (allHistory.length > 0 || recipeRows.length > 0)) {
+        const seeded = backfillFromHistory({
+          simpleEntries: allHistory,
+          recipes: recipeRows,
+        })
+        if (seeded.length > 0) {
+          await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(seeded))
+          setSuggestions(seeded)
+        }
+      }
     } catch (e) {
       setError(`Load error: ${e.message}`)
       setLoadingHistory(false)
@@ -211,8 +239,24 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     setEntries(sorted)
   }
 
+  const upsertSuggestionAndSave = async (item) => {
+    const next = upsertSuggestion(suggestions, item)
+    setSuggestions(next)
+    try {
+      await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(next))
+    } catch (e) {
+      console.warn('Failed to persist suggestions.csv:', e)
+    }
+  }
+
   const addEntry = async (entry) => {
     await saveLog(mergeEntry(entries, entry, 'simple'))
+    if (entry?.Meal) {
+      await upsertSuggestionAndSave({
+        name: entry.Meal,
+        protein_g: entry['Protein (g)'],
+      })
+    }
   }
 
   const updateEntry = async (idx, entry) => {
@@ -347,7 +391,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
             onAdd={addEntry}
             defaultDate={today}
             onAfterSave={requestCoaching}
-            entries={entries}
+            suggestions={suggestions}
             recipes={recipes}
           />
         )}
@@ -453,7 +497,7 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
   )
 }
 
-function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes = [] }) {
+function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggestionsCsv = [], recipes = [] }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('')
   const [protein, setProtein] = useState('')
@@ -466,30 +510,31 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
-  // Build suggestion list: recipes first, then historical entries, deduped by name.
+  // Suggestions = suggestions.csv (food database) + recipes, with virtual
+  // "Half X" variants for every item that has nutrition.
   const suggestions = useMemo(() => {
-    const list = []
-    const seen = new Set()
+    let list = []
     for (const r of recipes) {
-      const name = r.Recipe
-      if (name && !seen.has(name.toLowerCase())) {
-        list.push({ name, protein: num(r['Protein (g)']), calories: num(r.Calories) })
-        seen.add(name.toLowerCase())
-      }
+      if (!r.Recipe) continue
+      list = upsertSuggestion(list, {
+        name: r.Recipe,
+        protein_g: r['Protein (g)'],
+        calories: r.Calories,
+      })
     }
-    for (const e of entries) {
-      const name = e.Meal
-      if (name && !seen.has(name.toLowerCase())) {
-        list.push({ name, protein: num(e['Protein (g)']), calories: null })
-        seen.add(name.toLowerCase())
-      }
+    for (const s of suggestionsCsv) {
+      list = upsertSuggestion(list, s)
     }
-    return list
-  }, [recipes, entries])
+    return expandWithHalves(list).map(s => ({
+      name: s.name,
+      protein: s.protein_g === '' ? null : num(s.protein_g),
+      calories: s.calories === '' ? null : num(s.calories),
+    }))
+  }, [recipes, suggestionsCsv])
 
   const selectSuggestion = (s) => {
     setMeal(s.name)
-    setProtein(s.protein != null ? String(s.protein) : '')
+    if (s.protein != null) setProtein(String(s.protein))
   }
 
   const estimate = async () => {
