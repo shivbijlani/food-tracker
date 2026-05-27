@@ -466,22 +466,33 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
-  // Build suggestion list: recipes first, then historical entries, deduped by name.
+  // Build suggestion list: recipes + individual food items from history.
+  // Historical meal strings often bundle multiple foods (e.g. "Omelet, milk,
+  // cake") so we split on commas to surface each item as its own suggestion.
+  // Entries are iterated newest-first, so a recent single-item entry's protein
+  // value wins over older bundled entries containing the same item.
   const suggestions = useMemo(() => {
     const list = []
     const seen = new Set()
+    const add = (name, protein) => {
+      const trimmed = name && name.trim()
+      if (!trimmed) return
+      const key = trimmed.toLowerCase()
+      if (seen.has(key)) return
+      seen.add(key)
+      list.push({ name: trimmed, protein })
+    }
     for (const r of recipes) {
-      const name = r.Recipe
-      if (name && !seen.has(name.toLowerCase())) {
-        list.push({ name, protein: num(r['Protein (g)']), calories: num(r.Calories) })
-        seen.add(name.toLowerCase())
-      }
+      add(r.Recipe, num(r['Protein (g)']))
     }
     for (const e of entries) {
-      const name = e.Meal
-      if (name && !seen.has(name.toLowerCase())) {
-        list.push({ name, protein: num(e['Protein (g)']), calories: null })
-        seen.add(name.toLowerCase())
+      const raw = (e.Meal || '').trim()
+      if (!raw) continue
+      const parts = raw.split(',').map(p => p.trim()).filter(Boolean)
+      if (parts.length <= 1) {
+        add(raw, num(e['Protein (g)']))
+      } else {
+        for (const p of parts) add(p, null)
       }
     }
     return list
@@ -489,7 +500,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, entries = [], recipes
 
   const selectSuggestion = (s) => {
     setMeal(s.name)
-    setProtein(s.protein != null ? String(s.protein) : '')
+    if (s.protein != null) setProtein(String(s.protein))
   }
 
   const estimate = async () => {
