@@ -17,7 +17,6 @@ import {
   serializeSuggestions,
   upsertSuggestion,
   expandWithHalves,
-  backfillFromHistory,
 } from './storage/suggestions.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
@@ -153,15 +152,13 @@ export default function App() {
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       const recipeRows = readEntries(recipesText, RECIPE_HEADERS).rows
       setRecipes(recipeRows)
-      const hasSuggestionsFile = suggestionsText != null && suggestionsText !== ''
       setSuggestions(parseSuggestions(suggestionsText || ''))
       setError('')
 
-      // Lazy-load history in the background.
+      // Lazy-load history in the background (for LogView).
       setLoadingHistory(true)
       const months = await listMonthFiles(storage, 'entries')
       const rest = months.filter(m => m.monthKey !== curKey)
-      let allHistory = readEntries(curText, DAILY_LOG_HEADERS).rows
       if (rest.length) {
         const texts = await Promise.all(rest.map(m => storage.readFile(m.name)))
         const histRows = texts.flatMap(t => readEntries(t, DAILY_LOG_HEADERS).rows)
@@ -170,22 +167,8 @@ export default function App() {
           merged.sort((a, b) => (a.Date < b.Date ? 1 : a.Date > b.Date ? -1 : 0))
           return merged
         })
-        allHistory = [...allHistory, ...histRows]
       }
       setLoadingHistory(false)
-
-      // One-time backfill: if suggestions.csv doesn't exist yet, seed it from
-      // existing history + recipes so the user doesn't start with an empty list.
-      if (!hasSuggestionsFile && (allHistory.length > 0 || recipeRows.length > 0)) {
-        const seeded = backfillFromHistory({
-          advancedEntries: allHistory,
-          recipes: recipeRows,
-        })
-        if (seeded.length > 0) {
-          await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(seeded))
-          setSuggestions(seeded)
-        }
-      }
     } catch (e) {
       setError(`Load error: ${e.message}`)
       setLoadingHistory(false)
