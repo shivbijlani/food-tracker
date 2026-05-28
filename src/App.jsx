@@ -272,7 +272,12 @@ export default function App() {
 
   const addEntryWithCoaching = async (entry) => {
     await addEntry(entry)
-    requestCoaching(entry?.Meal || '', entry?.['Protein (g)'] || '')
+    // Pass all entries for this meal so coaching reflects the full session,
+    // not just the single item that was just saved.
+    const sameMeal = logEntries.filter(
+      e => e.Date === entry.Date && e.Meal === entry.Meal
+    )
+    requestCoaching(entry.Meal || '', entry['Protein (g)'] || '', [...sameMeal, entry])
   }
 
   if (loading) return <div className="app"><div className="empty">Loading…</div></div>

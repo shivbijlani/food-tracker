@@ -43,7 +43,7 @@ export function useCoaching({ storageReady, entries, systemsText = '', proteinGo
   const coachAbortRef = useRef(null)
   const coachedOnLoadRef = useRef(false)
 
-  const requestCoaching = useCallback((lastMeal = '', lastProteinLogged = '') => {
+  const requestCoaching = useCallback((lastMeal = '', lastProteinLogged = '', mealEntries = null) => {
     if (!llm.isReady()) return
     coachAbortRef.current?.abort()
     const ctrl = new AbortController()
@@ -94,13 +94,27 @@ export function useCoaching({ storageReady, entries, systemsText = '', proteinGo
       .map(e => `${e.Date} | ${e.Meal || ''} | ${e['Food Description'] || ''} | ${e['Protein (g)'] || 0}g protein`)
       .join('\n')
 
+    // Build a summary line for the meal that was just logged.
+    // If multiple items were tracked in the same meal session, summarise
+    // the whole meal rather than just the last item.
+    let lastMealLine = ''
+    if (lastMeal) {
+      const items = mealEntries && mealEntries.length > 0 ? mealEntries : null
+      if (items && items.length > 1) {
+        const totalPro = Math.round(items.reduce((s, e) => s + num(e['Protein (g)']), 0))
+        const totalCal = Math.round(items.reduce((s, e) => s + num(e.Calories), 0))
+        lastMealLine = `${lastMeal} complete — ${items.length} items, ${totalPro}g protein, ${totalCal} kcal total`
+      } else {
+        lastMealLine = `${lastMeal} — ${lastProteinLogged}g protein`
+      }
+    }
+
     setCoaching(null)
     llm.getCoaching({
       recentEntriesText,
       systemsText,
       proteinGoal,
-      lastMeal,
-      lastProteinLogged,
+      lastMealLine,
       todayEntriesText,
       todayTotals: todayEntries.length > 0 ? todayTotals : null,
       goalsText,
