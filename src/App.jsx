@@ -265,6 +265,9 @@ export default function App() {
     storageReady,
     entries: logEntries,
     proteinGoal,
+    today: todayStr(),
+    goals,
+    frequentFoods: suggestions,
   })
 
   const addEntryWithCoaching = async (entry) => {
