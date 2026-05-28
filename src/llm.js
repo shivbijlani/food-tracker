@@ -290,7 +290,7 @@ const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preambl
 // message instead. Small/free models often echo system prompts verbatim,
 // so we put behavioural guidance in the user turn and keep the system
 // message minimal. Used by the leak filter below as well.
-const COACH_GUIDANCE = `You are a direct, practical nutrition coach. The user just logged a meal.
+const COACH_GUIDANCE = `As a performance nutritionist, respond to this meal log entry.
 
 Write 2–3 plain-text sentences (60 words max) that:
 1. Honestly assess today's progress — skip praise unless they are genuinely on track (within 10% of a goal). If behind, say so plainly.
