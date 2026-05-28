@@ -107,6 +107,48 @@ export function upsertSuggestion(items, incoming) {
   return next
 }
 
+// Generate ½-serving, 1-serving, and 2-serving suggestion entries for recipes.
+// Recipes store per-serving nutrition, so we scale accordingly.
+// RECIPE_HEADERS: ['Recipe', 'Servings', 'Calories', 'Protein (g)', 'Calcium (mg)', 'Notes']
+export function expandRecipeServings(recipes) {
+  const out = []
+  for (const r of recipes) {
+    const name = (r.Recipe || '').trim()
+    if (!name) continue
+    const scale = (v, factor) => {
+      const n = Number(v)
+      if (!isFinite(n) || n <= 0) return ''
+      const result = Math.round(n * factor * 10) / 10
+      return String(result).replace(/\.0$/, '')
+    }
+    out.push({
+      name: `½ serving of ${name}`,
+      protein_g: scale(r['Protein (g)'], 0.5),
+      calories:  scale(r.Calories, 0.5),
+      calcium_mg: scale(r['Calcium (mg)'], 0.5),
+      veg_servings: '',
+      omega3: '',
+    })
+    out.push({
+      name: `1 serving of ${name}`,
+      protein_g: String(r['Protein (g)'] || ''),
+      calories:  String(r.Calories || ''),
+      calcium_mg: String(r['Calcium (mg)'] || ''),
+      veg_servings: '',
+      omega3: '',
+    })
+    out.push({
+      name: `2 servings of ${name}`,
+      protein_g: scale(r['Protein (g)'], 2),
+      calories:  scale(r.Calories, 2),
+      calcium_mg: scale(r['Calcium (mg)'], 2),
+      veg_servings: '',
+      omega3: '',
+    })
+  }
+  return out
+}
+
 // Generate virtual "Half {name}" variants for items with usable nutrition.
 // These are NOT stored — they're recomputed at read time. We skip items that
 // already start with "Half " to prevent stacking ("Half Half X").

@@ -17,6 +17,7 @@ import {
   serializeSuggestions,
   upsertSuggestion,
   expandWithHalves,
+  expandRecipeServings,
 } from './storage/suggestions.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
@@ -417,33 +418,29 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
-  // Suggestions = suggestions.csv (the food database) + recipes, with a
-  // virtual "Half X" variant for every item that has nutrition.
+  // Suggestions = recipes (as ½ / 1 / 2 serving variants) + suggestions.csv
+  // (non-recipe items with a "Half X" virtual entry for each).
   const suggestions = useMemo(() => {
-    // Build a unified list with recipes first, then CSV items (CSV wins on dupe).
-    let list = []
-    for (const r of recipes) {
-      if (!r.Recipe) continue
-      list = upsertSuggestion(list, {
-        name: r.Recipe,
-        protein_g: r['Protein (g)'],
-        calories: r.Calories,
-        calcium_mg: r['Calcium (mg)'],
-      })
-    }
-    for (const s of suggestionsCsv) {
-      list = upsertSuggestion(list, s)
-    }
-    // Map to the shape AutocompleteInput expects, then expand halves.
-    const expanded = expandWithHalves(list)
-    return expanded.map(s => ({
+    const toItem = s => ({
       name: s.name,
       protein: num(s.protein_g),
       calories: num(s.calories),
       calcium_mg: num(s.calcium_mg),
       veg_servings: num(s.veg_servings),
       omega3: s.omega3 || 'N',
-    }))
+    })
+
+    // Recipes → ½ serving, 1 serving, 2 servings
+    const recipeItems = expandRecipeServings(recipes).map(toItem)
+
+    // CSV items that aren't already covered by a recipe → expand with halves
+    const recipeNames = new Set(recipes.map(r => (r.Recipe || '').trim().toLowerCase()))
+    const nonRecipeCsv = suggestionsCsv.filter(
+      s => !recipeNames.has((s.name || '').trim().toLowerCase())
+    )
+    const csvItems = expandWithHalves(nonRecipeCsv).map(toItem)
+
+    return [...recipeItems, ...csvItems]
   }, [recipes, suggestionsCsv])
 
   const selectSuggestion = (s) => {
