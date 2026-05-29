@@ -1,6 +1,6 @@
 import { useInstallPrompt } from './useInstallPrompt.js'
 
-export function InstallSettingsSection({ onOpen, appName = 'this app', sectionClassName = 'install-prompt-section' }) {
+export function InstallSettingsSection({ onOpen, sectionClassName = 'install-prompt-section' }) {
   const { installed, platform, hasNativePrompt } = useInstallPrompt()
   if (installed) return null
 

@@ -8,7 +8,6 @@
 
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 
 const require = createRequire(import.meta.url)
@@ -113,7 +112,7 @@ if (goalsSheet) {
       String(r['Target'] ?? ''),
       String(r['Notes'] ?? ''),
     ]).filter(r => r[0])
-  } catch (e) {
+  } catch {
     goalsRows = null
   }
 }
@@ -150,7 +149,7 @@ if (recipesSheet) {
       String(r['Per Serving: Calcium (mg)'] ?? r['Calcium (mg)'] ?? ''),
       String(r['Notes'] ?? ''),
     ]).filter(r => r[0])
-  } catch (e) {
+  } catch {
     recipesRows = null
   }
 }
