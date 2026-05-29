@@ -52,6 +52,20 @@ export function useCoaching({ storageReady, entries, systemsText = '', proteinGo
     const todayDate = today || todayStr()
     const todayEntries = (entries || []).filter(e => e.Date === todayDate)
 
+    // Only reason about time-of-day when coaching the actual current day —
+    // otherwise (e.g. reviewing a past date) "now" is meaningless.
+    let currentTime = ''
+    if (todayDate === todayStr()) {
+      const now = new Date()
+      const hr = now.getHours()
+      const period =
+        hr < 11 ? 'morning' :
+        hr < 14 ? 'midday' :
+        hr < 17 ? 'afternoon' :
+        hr < 21 ? 'evening' : 'late evening'
+      currentTime = `${String(hr).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} (${period})`
+    }
+
     // Today's meals formatted for the prompt
     const todayEntriesText = todayEntries
       .map(e => `${e.Meal || '?'} | ${e['Food Description'] || '(no description)'} | ${e['Protein (g)'] || 0}g protein | ${e.Calories || 0} kcal`)
@@ -119,6 +133,7 @@ export function useCoaching({ storageReady, entries, systemsText = '', proteinGo
       todayTotals: todayEntries.length > 0 ? todayTotals : null,
       goalsText,
       frequentFoodsText,
+      currentTime,
       signal: ctrl.signal,
     })
       .then(text => { if (!ctrl.signal.aborted) setCoaching(text || null) })

@@ -293,8 +293,8 @@ const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preambl
 const COACH_GUIDANCE = `As a performance nutritionist, respond to this meal log entry.
 
 Write 2–3 plain-text sentences (60 words max) that:
-1. Honestly assess today's progress — skip praise unless they are genuinely on track (within 10% of a goal). If behind, say so plainly.
-2. State the most important remaining gap in specific numbers.
+1. Assess progress in the context of the current time of day. Early in the day it is normal and expected to be below the daily totals, so never frame that as "falling behind" or "below every target" — only treat a gap as a concern if the meals left in the day realistically can't cover it. Skip praise unless they are genuinely on track.
+2. State the most important remaining gap as what's still left to eat for the rest of the day, in specific numbers.
 3. Name 1–2 foods from their history that would efficiently close the gap.
 
 Plain text only — no markdown, no bullet points, no headings. Never invent numbers or foods not in the provided data.`
@@ -306,7 +306,7 @@ Plain text only — no markdown, no bullet points, no headings. Never invent num
  * @param {{ recentEntriesText?: string, systemsText?: string, proteinGoal?: number,
  *           lastMeal?: string, lastProteinLogged?: number|string,
  *           todayEntriesText?: string, todayTotals?: object,
- *           goalsText?: string, frequentFoodsText?: string,
+ *           goalsText?: string, frequentFoodsText?: string, currentTime?: string,
  *           signal?: AbortSignal }} ctx
  * @returns {Promise<string|null>}
  */
@@ -324,6 +324,7 @@ export async function getCoaching(ctx = {}) {
     todayTotals = null,
     goalsText = '',
     frequentFoodsText = '',
+    currentTime = '',
     signal,
   } = ctx
 
@@ -343,6 +344,7 @@ export async function getCoaching(ctx = {}) {
     COACH_GUIDANCE,
     '',
     goalsText ? `Daily goals: ${goalsText}` : (proteinGoal ? `Daily protein goal: ${proteinGoal}g` : ''),
+    currentTime ? `Current time: ${currentTime}. Goals are whole-day targets — judge progress relative to how much of the day is left, not as if the day were over.` : '',
     '',
     todaySection,
     totalsLine,
