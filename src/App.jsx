@@ -724,7 +724,7 @@ function RecipesView({ recipes, onSave }) {
     <>
       <div className="card">
         <h2>Recipes ({recipes.length})</h2>
-        <p className="muted">Per-serving nutrition for homemade items. Mention them by name when logging meals for accurate estimates.</p>
+        <p className="muted">Enter the whole recipe's totals plus how many servings it makes — the app divides to get per-serving nutrition. Mention recipes by name when logging meals for accurate estimates.</p>
         {recipes.length === 0 ? (
           <div className="empty">No recipes yet.</div>
         ) : (
@@ -1203,7 +1203,7 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
         <ul className="muted">
           <li><code>daily-log.md</code> — every meal you log</li>
           <li><code>goals.md</code> — your daily nutrition targets</li>
-          <li><code>recipes.md</code> — homemade items with known per-serving nutrition</li>
+          <li><code>recipes.md</code> — homemade items storing whole-recipe totals plus a servings count</li>
         </ul>
         <p className="muted">Edit them in any text editor; the app will pick up changes.</p>
       </div>

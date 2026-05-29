@@ -107,18 +107,28 @@ export function upsertSuggestion(items, incoming) {
   return next
 }
 
+// Number of servings a recipe yields. Recipes store whole-recipe totals, so
+// this is the divisor used to derive per-serving nutrition. Blank/invalid
+// values fall back to 1 (treat the recipe as a single serving).
+export function recipeServingsCount(r) {
+  const n = Number(r && r.Servings)
+  return isFinite(n) && n > 0 ? n : 1
+}
+
 // Generate ½-serving, 1-serving, and 2-serving suggestion entries for recipes.
-// Recipes store per-serving nutrition, so we scale accordingly.
+// Recipes store WHOLE-RECIPE totals plus a Servings count, so per-serving
+// nutrition is total / servings; we then scale that by the portion factor.
 // RECIPE_HEADERS: ['Recipe', 'Servings', 'Calories', 'Protein (g)', 'Calcium (mg)', 'Notes']
 export function expandRecipeServings(recipes) {
   const out = []
   for (const r of recipes) {
     const name = (r.Recipe || '').trim()
     if (!name) continue
+    const servings = recipeServingsCount(r)
     const scale = (v, factor) => {
       const n = Number(v)
       if (!isFinite(n) || n <= 0) return ''
-      const result = Math.round(n * factor * 10) / 10
+      const result = Math.round((n / servings) * factor * 10) / 10
       return String(result).replace(/\.0$/, '')
     }
     out.push({
@@ -131,9 +141,9 @@ export function expandRecipeServings(recipes) {
     })
     out.push({
       name: `1 serving of ${name}`,
-      protein_g: String(r['Protein (g)'] || ''),
-      calories:  String(r.Calories || ''),
-      calcium_mg: String(r['Calcium (mg)'] || ''),
+      protein_g: scale(r['Protein (g)'], 1),
+      calories:  scale(r.Calories, 1),
+      calcium_mg: scale(r['Calcium (mg)'], 1),
       veg_servings: '',
       omega3: '',
     })
@@ -186,11 +196,17 @@ export function backfillFromHistory({ advancedEntries = [], simpleEntries = [], 
   let list = []
   for (const r of recipes) {
     if (!r.Recipe) continue
+    const servings = recipeServingsCount(r)
+    const perServing = (v) => {
+      const n = Number(v)
+      if (!isFinite(n) || n <= 0) return ''
+      return String(Math.round((n / servings) * 10) / 10).replace(/\.0$/, '')
+    }
     list = upsertSuggestion(list, {
       name: r.Recipe,
-      protein_g: r['Protein (g)'],
-      calories: r.Calories,
-      calcium_mg: r['Calcium (mg)'],
+      protein_g: perServing(r['Protein (g)']),
+      calories: perServing(r.Calories),
+      calcium_mg: perServing(r['Calcium (mg)']),
     })
   }
   for (const e of advancedEntries) {

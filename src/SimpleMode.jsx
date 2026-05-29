@@ -15,6 +15,7 @@ import {
   serializeSuggestions,
   upsertSuggestion,
   expandWithHalves,
+  recipeServingsCount,
 } from './storage/suggestions.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import * as llm from './llm.js'
@@ -500,10 +501,16 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     let list = []
     for (const r of recipes) {
       if (!r.Recipe) continue
+      const servings = recipeServingsCount(r)
+      const perServing = (v) => {
+        const n = Number(v)
+        if (!isFinite(n) || n <= 0) return ''
+        return String(Math.round((n / servings) * 10) / 10).replace(/\.0$/, '')
+      }
       list = upsertSuggestion(list, {
         name: r.Recipe,
-        protein_g: r['Protein (g)'],
-        calories: r.Calories,
+        protein_g: perServing(r['Protein (g)']),
+        calories: perServing(r.Calories),
       })
     }
     for (const s of suggestionsCsv) {

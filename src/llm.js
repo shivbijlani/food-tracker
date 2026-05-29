@@ -142,9 +142,16 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   }
 
   const recipeContext = recipes.length
-    ? `\n\nKnown recipes (nutrition is per serving):\n${recipes.map(r =>
-        `- ${r.Recipe}${r.Servings ? ` (makes ${r.Servings} servings)` : ''}: ${r.Calories} kcal, ${r['Protein (g)']}g protein, ${r['Calcium (mg)']}mg calcium per serving`
-      ).join('\n')}`
+    ? `\n\nKnown recipes (values below are per serving):\n${recipes.map(r => {
+        const s = Number(r.Servings)
+        const div = isFinite(s) && s > 0 ? s : 1
+        const per = (v) => {
+          const n = Number(v)
+          if (!isFinite(n) || n <= 0) return '?'
+          return Math.round((n / div) * 10) / 10
+        }
+        return `- ${r.Recipe}${r.Servings ? ` (makes ${r.Servings} servings)` : ''}: ${per(r.Calories)} kcal, ${per(r['Protein (g)'])}g protein, ${per(r['Calcium (mg)'])}mg calcium per serving`
+      }).join('\n')}`
     : ''
 
   const model = getModel(provider)
