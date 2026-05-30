@@ -332,6 +332,70 @@ input, textarea, select {
   border-radius: 6px;
   text-align: center;
 }
+
+.previews-container {
+  margin-top: 16px;
+  background: var(--accent-soft);
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.preview-item {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  borderRadius: 8px;
+  background: white;
+}
+
+.preview-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.preview-item-name-input {
+  font-weight: bold;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  width: 60%;
+}
+
+.simple-estimate-item {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+}
+
+.simple-estimate-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.simple-estimate-item-name-input {
+  font-weight: bold;
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+}
+
+.simple-estimate-item-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.simple-estimate-item-protein-input {
+  padding: 4px 8px;
+  width: 70px;
+}
 .preview-card .stat .v { font-weight: 700; font-size: 16px; }
 .preview-card .stat .l { font-size: 11px; color: var(--text-muted); }
 
@@ -929,12 +993,20 @@ table.simple th {
 
   /* Preview card mobile */
   .preview-card .stat-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
   }
 
   .preview-card .stat {
     padding: 6px;
+  }
+
+  .previews-container {
+    padding: 8px;
+  }
+
+  .preview-item {
+    padding: 8px;
   }
 
   .preview-card .stat .v {
@@ -1001,7 +1073,7 @@ table.simple th {
   }
 
   .preview-card .stat-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .entry-stats {
