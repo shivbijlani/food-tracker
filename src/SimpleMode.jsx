@@ -548,7 +548,10 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
   const estimate = async () => {
     if (!meal.trim()) return
-    const parts = meal.split(',').map(p => p.trim()).filter(Boolean)
+    let parts = meal.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.length === 1 && parts[0].includes(' and ')) {
+      parts = parts[0].split(/\s+and\s+/i).map(p => p.trim()).filter(Boolean)
+    }
     if (parts.length === 0) return
 
     setBusy(true)
@@ -651,29 +654,36 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
       </div>
 
       {items.length > 0 && (
-        <div style={{ marginBottom: 12, padding: 12, background: 'var(--accent-soft)', borderRadius: 8 }}>
-          <div className="flex justify-between items-center" style={{ marginBottom: 8 }}>
+        <div className="previews-container">
+          <div className="flex justify-between items-center" style={{ marginBottom: 12 }}>
             <strong>Estimated items</strong>
             {busy && <span className="spinner" />}
           </div>
           {items.map(it => (
-            <div key={it.id} className="protein-estimate-row" style={{ background: 'white', padding: 8, borderRadius: 6, marginBottom: 8, border: '1px solid var(--border)' }}>
+            <div key={it.id} className="simple-estimate-item">
                <div style={{ flex: 1 }}>
-                 <div className="flex justify-between items-center">
+                 <div className="simple-estimate-item-header">
                     <input
                       value={it.name}
                       onChange={e => updateItem(it.id, 'name', e.target.value)}
-                      style={{ fontWeight: 'bold', border: 'none', background: 'transparent', padding: 0, width: '100%' }}
+                      className="simple-estimate-item-name-input"
                     />
-                    <button className="icon-btn" onClick={() => removeItem(it.id)} style={{ minWidth: 0, minHeight: 0, padding: 4 }}>🗑</button>
+                    <div className="flex gap-4">
+                      <button className="icon-btn" onClick={() => {
+                        onAdd([{ Date: date, Meal: it.name.trim(), 'Protein (g)': it.protein || '0' }])
+                        onAfterSave?.(it.name.trim(), num(it.protein))
+                        removeItem(it.id)
+                      }} title="Save this item" disabled={it.loading} style={{ minWidth: 0, minHeight: 0, padding: 4 }}>➕</button>
+                      <button className="icon-btn" onClick={() => removeItem(it.id)} title="Remove" style={{ minWidth: 0, minHeight: 0, padding: 4 }}>🗑</button>
+                    </div>
                  </div>
-                 <div className="flex items-center gap-8" style={{ marginTop: 4 }}>
-                    <div className="field" style={{ margin: 0, flex: '0 0 80px' }}>
+                 <div className="simple-estimate-item-body">
+                    <div className="field" style={{ margin: 0 }}>
                        <input
                          type="number"
                          value={it.protein}
                          onChange={e => updateItem(it.id, 'protein', e.target.value)}
-                         style={{ padding: '4px 8px' }}
+                         className="simple-estimate-item-protein-input"
                        />
                     </div>
                     <span className="muted">g protein</span>
@@ -684,7 +694,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
             </div>
           ))}
           <div className="flex justify-between items-center" style={{ marginTop: 8, padding: '0 4px' }}>
-            <strong>Total Protein: {Math.round(totalProtein)}g</strong>
+            <strong style={{ fontSize: 14 }}>Total: {Math.round(totalProtein)}g pro</strong>
             <button className="btn btn-secondary" onClick={() => setItems([])} style={{ padding: '4px 10px', fontSize: 12 }}>Discard all</button>
           </div>
         </div>

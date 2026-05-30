@@ -431,31 +431,32 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
   )
 }
 
-function PreviewItem({ item, onChange, onRemove }) {
+function PreviewItem({ item, onChange, onRemove, onAdd }) {
   const [editing, setEditing] = useState(false)
 
   return (
-    <div className="preview-item" style={{ marginBottom: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 8, background: 'white' }}>
-      <div className="flex justify-between items-center" style={{ marginBottom: 8 }}>
+    <div className="preview-item">
+      <div className="preview-item-header">
         {editing ? (
           <input
             value={item.name}
             onChange={e => onChange('name', e.target.value)}
-            style={{ fontWeight: 'bold', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', width: '60%' }}
+            className="preview-item-name-input"
           />
         ) : (
-          <strong>{item.name}</strong>
+          <strong style={{ fontSize: 14 }}>{item.name}</strong>
         )}
         <div className="flex items-center gap-8">
           {item.loading ? <span className="spinner" /> : (
-            <span className={`muted confidence-${item.confidence}`} style={{ fontSize: 11 }}>
+            <span className={`muted confidence-${item.confidence}`} style={{ fontSize: 10 }}>
               {item.confidence}
             </span>
           )}
-          <button className="icon-btn" onClick={() => setEditing(!editing)} title={editing ? 'Done' : 'Edit name'}>
+          <button className="icon-btn" onClick={() => setEditing(!editing)} title={editing ? 'Done' : 'Edit name'} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>
             {editing ? '✅' : '✏️'}
           </button>
-          <button className="icon-btn" onClick={onRemove} title="Remove">🗑</button>
+          <button className="icon-btn" onClick={onAdd} title="Save this item" disabled={item.loading} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>➕</button>
+          <button className="icon-btn" onClick={onRemove} title="Remove" style={{ minHeight: 0, minWidth: 0, padding: 4 }}>🗑</button>
         </div>
       </div>
 
@@ -464,14 +465,14 @@ function PreviewItem({ item, onChange, onRemove }) {
       <div className="stat-grid" style={{ opacity: item.loading ? 0.5 : 1 }}>
         {editing ? (
           <>
-            <NumStat label="Calories" value={item.calories} onChange={v => onChange('calories', v)} />
-            <NumStat label="Protein (g)" value={item.protein_g} onChange={v => onChange('protein_g', v)} />
-            <NumStat label="Calcium (mg)" value={item.calcium_mg} onChange={v => onChange('calcium_mg', v)} />
-            <NumStat label="Veg srv" value={item.veg_servings} step="0.5" onChange={v => onChange('veg_servings', v)} />
+            <NumStat label="kcal" value={item.calories} onChange={v => onChange('calories', v)} />
+            <NumStat label="pro g" value={item.protein_g} onChange={v => onChange('protein_g', v)} />
+            <NumStat label="Ca mg" value={item.calcium_mg} onChange={v => onChange('calcium_mg', v)} />
+            <NumStat label="veg srv" value={item.veg_servings} step="0.5" onChange={v => onChange('veg_servings', v)} />
             <div className="stat">
               <select value={item.omega3} onChange={e => onChange('omega3', e.target.value)} style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', fontSize: 14, fontWeight: 700 }}>
-                <option value="Y">ω-3 Y</option>
-                <option value="N">ω-3 N</option>
+                <option value="Y">Y</option>
+                <option value="N">N</option>
               </select>
               <div className="l">omega-3</div>
             </div>
@@ -479,8 +480,8 @@ function PreviewItem({ item, onChange, onRemove }) {
         ) : (
           <>
             <div className="stat"><div className="v">{item.calories}</div><div className="l">kcal</div></div>
-            <div className="stat"><div className="v">{item.protein_g}</div><div className="l">protein g</div></div>
-            <div className="stat"><div className="v">{item.calcium_mg}</div><div className="l">calcium mg</div></div>
+            <div className="stat"><div className="v">{item.protein_g}</div><div className="l">pro g</div></div>
+            <div className="stat"><div className="v">{item.calcium_mg}</div><div className="l">Ca mg</div></div>
             <div className="stat"><div className="v">{item.veg_servings}</div><div className="l">veg srv</div></div>
             <div className="stat"><div className="v">{item.omega3}</div><div className="l">omega-3</div></div>
           </>
@@ -542,7 +543,10 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
   const estimate = async () => {
     if (!desc.trim()) return
-    const parts = desc.split(',').map(p => p.trim()).filter(Boolean)
+    let parts = desc.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.length === 1 && parts[0].includes(' and ')) {
+      parts = parts[0].split(/\s+and\s+/i).map(p => p.trim()).filter(Boolean)
+    }
     if (parts.length === 0) return
 
     setBusy(true)
@@ -643,7 +647,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
       )}
 
       {previews.length > 0 && (
-        <div className="previews-container" style={{ marginTop: 16, background: 'var(--accent-soft)', padding: 12, borderRadius: 10 }}>
+        <div className="previews-container">
            <div className="flex justify-between items-center" style={{ marginBottom: 12 }}>
              <strong>Estimated items</strong>
              {busy && <span className="spinner" />}
@@ -655,6 +659,20 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                item={p}
                onChange={(key, val) => updatePreview(p.id, key, val)}
                onRemove={() => removePreview(p.id)}
+               onAdd={() => {
+                 onAdd([{
+                   Date: date,
+                   Meal: meal,
+                   'Food Description': p.name.trim(),
+                   Calories: p.calories,
+                   'Protein (g)': p.protein_g,
+                   'Calcium (mg)': p.calcium_mg,
+                   'Veg Servings': p.veg_servings,
+                   'Omega-3': p.omega3,
+                   Notes: '',
+                 }])
+                 removePreview(p.id)
+               }}
              />
            ))}
 
@@ -664,8 +682,8 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
              </div>
              <div className="stat-grid">
                 <div className="stat"><div className="v">{totals.calories}</div><div className="l">kcal</div></div>
-                <div className="stat"><div className="v">{totals.protein_g}</div><div className="l">protein g</div></div>
-                <div className="stat"><div className="v">{totals.calcium_mg}</div><div className="l">calcium mg</div></div>
+                <div className="stat"><div className="v">{totals.protein_g}</div><div className="l">pro g</div></div>
+                <div className="stat"><div className="v">{totals.calcium_mg}</div><div className="l">Ca mg</div></div>
                 <div className="stat"><div className="v">{totals.veg_servings}</div><div className="l">veg srv</div></div>
                 <div className="stat"><div className="v">{totals.omega3 ? 'Y' : 'N'}</div><div className="l">omega-3</div></div>
              </div>
