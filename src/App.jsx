@@ -235,19 +235,33 @@ export default function App() {
     }
   }
 
-  const addEntry = async (entry) => {
-    await saveLog(mergeEntry(logEntries, entry, 'advanced'))
-    // Upsert into the food database — whatever the user typed becomes a
-    // suggestion next time (commas and all; the user is the curator).
-    if (entry?.['Food Description']) {
-      await upsertSuggestionAndSave({
-        name: entry['Food Description'],
-        protein_g: entry['Protein (g)'],
-        calories: entry.Calories,
-        calcium_mg: entry['Calcium (mg)'],
-        veg_servings: entry['Veg Servings'],
-        omega3: entry['Omega-3'],
-      })
+  const addEntries = async (newEntries) => {
+    // 1. Update log (merging items that share Date+Meal)
+    let nextLog = logEntries
+    for (const e of newEntries) {
+      nextLog = mergeEntry(nextLog, e, 'advanced')
+    }
+    await saveLog(nextLog)
+
+    // 2. Update suggestions (tracking each item individually)
+    let nextSuggestions = suggestions
+    for (const e of newEntries) {
+      if (e?.['Food Description']) {
+        nextSuggestions = upsertSuggestion(nextSuggestions, {
+          name: e['Food Description'],
+          protein_g: e['Protein (g)'],
+          calories: e.Calories,
+          calcium_mg: e['Calcium (mg)'],
+          veg_servings: e['Veg Servings'],
+          omega3: e['Omega-3'],
+        })
+      }
+    }
+    setSuggestions(nextSuggestions)
+    try {
+      await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
+    } catch (e) {
+      console.warn('Failed to persist suggestions.csv:', e)
     }
   }
 
@@ -271,14 +285,16 @@ export default function App() {
     frequentFoods: suggestions,
   })
 
-  const addEntryWithCoaching = async (entry) => {
-    await addEntry(entry)
-    // Pass all entries for this meal so coaching reflects the full session,
-    // not just the single item that was just saved.
+  const addEntriesWithCoaching = async (newEntries) => {
+    await addEntries(newEntries)
+    if (newEntries.length === 0) return
+    const entry = newEntries[0]
+    // Pass all entries for this meal so coaching reflects the full session
     const sameMeal = logEntries.filter(
       e => e.Date === entry.Date && e.Meal === entry.Meal
     )
-    requestCoaching(entry.Meal || '', entry['Protein (g)'] || '', [...sameMeal, entry])
+    const totalProtein = newEntries.reduce((sum, e) => sum + num(e['Protein (g)']), 0)
+    requestCoaching(entry.Meal || '', totalProtein, [...sameMeal, ...newEntries])
   }
 
   if (loading) return <div className="app"><div className="empty">Loading…</div></div>
@@ -329,7 +345,7 @@ export default function App() {
       {/* Coaching tip — shown on load if LLM connected, refreshed after each save */}
       <CoachingCard text={coaching} onDismiss={() => setCoaching(null)} />
 
-      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} />}
+      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntriesWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
@@ -415,14 +431,72 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
   )
 }
 
+function PreviewItem({ item, onChange, onRemove }) {
+  const [editing, setEditing] = useState(false)
+
+  return (
+    <div className="preview-item" style={{ marginBottom: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 8, background: 'white' }}>
+      <div className="flex justify-between items-center" style={{ marginBottom: 8 }}>
+        {editing ? (
+          <input
+            value={item.name}
+            onChange={e => onChange('name', e.target.value)}
+            style={{ fontWeight: 'bold', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', width: '60%' }}
+          />
+        ) : (
+          <strong>{item.name}</strong>
+        )}
+        <div className="flex items-center gap-8">
+          {item.loading ? <span className="spinner" /> : (
+            <span className={`muted confidence-${item.confidence}`} style={{ fontSize: 11 }}>
+              {item.confidence}
+            </span>
+          )}
+          <button className="icon-btn" onClick={() => setEditing(!editing)} title={editing ? 'Done' : 'Edit name'}>
+            {editing ? '✅' : '✏️'}
+          </button>
+          <button className="icon-btn" onClick={onRemove} title="Remove">🗑</button>
+        </div>
+      </div>
+
+      {item.err && <div className="banner error" style={{ padding: '4px 8px', fontSize: 12, marginBottom: 8 }}>{item.err}</div>}
+
+      <div className="stat-grid" style={{ opacity: item.loading ? 0.5 : 1 }}>
+        {editing ? (
+          <>
+            <NumStat label="Calories" value={item.calories} onChange={v => onChange('calories', v)} />
+            <NumStat label="Protein (g)" value={item.protein_g} onChange={v => onChange('protein_g', v)} />
+            <NumStat label="Calcium (mg)" value={item.calcium_mg} onChange={v => onChange('calcium_mg', v)} />
+            <NumStat label="Veg srv" value={item.veg_servings} step="0.5" onChange={v => onChange('veg_servings', v)} />
+            <div className="stat">
+              <select value={item.omega3} onChange={e => onChange('omega3', e.target.value)} style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', fontSize: 14, fontWeight: 700 }}>
+                <option value="Y">ω-3 Y</option>
+                <option value="N">ω-3 N</option>
+              </select>
+              <div className="l">omega-3</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="stat"><div className="v">{item.calories}</div><div className="l">kcal</div></div>
+            <div className="stat"><div className="v">{item.protein_g}</div><div className="l">protein g</div></div>
+            <div className="stat"><div className="v">{item.calcium_mg}</div><div className="l">calcium mg</div></div>
+            <div className="stat"><div className="v">{item.veg_servings}</div><div className="l">veg srv</div></div>
+            <div className="stat"><div className="v">{item.omega3}</div><div className="l">omega-3</div></div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [] }) {
   const [date, setDate] = useState(defaultDate)
   const [meal, setMeal] = useState('Breakfast')
   const [desc, setDesc] = useState('')
-  const [preview, setPreview] = useState(null)
+  const [previews, setPreviews] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [editing, setEditing] = useState(false)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
@@ -453,48 +527,85 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
   const selectSuggestion = (s) => {
     setDesc(s.name)
-    setPreview({
+    setPreviews([{
+      id: Math.random().toString(36).slice(2),
+      name: s.name,
       calories: s.calories,
       protein_g: s.protein,
       calcium_mg: s.calcium_mg,
       veg_servings: s.veg_servings,
       omega3: s.omega3 || 'N',
       confidence: 'high',
-    })
+      loading: false,
+    }])
   }
 
   const estimate = async () => {
     if (!desc.trim()) return
-    setBusy(true); setErr(''); setPreview(null)
-    try {
-      const result = await llm.estimateNutrition(desc, { recipes })
-      setPreview(result)
-    } catch (e) {
-      setErr(e.message)
-      if (e.code === 'LLM_NOT_CONFIGURED') openSettings('settings-llm')
-    } finally {
-      setBusy(false)
-    }
+    const parts = desc.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.length === 0) return
+
+    setBusy(true)
+    setErr('')
+
+    const newPreviews = parts.map(name => ({
+      id: Math.random().toString(36).slice(2),
+      name,
+      loading: true,
+      calories: 0,
+      protein_g: 0,
+      calcium_mg: 0,
+      veg_servings: 0,
+      omega3: 'N',
+      confidence: 'medium',
+    }))
+    setPreviews(newPreviews)
+
+    // Parallel estimates
+    await Promise.all(parts.map(async (part, i) => {
+      try {
+        const result = await llm.estimateNutrition(part, { recipes })
+        setPreviews(prev => prev.map(p => p.id === newPreviews[i].id ? { ...p, ...result, loading: false } : p))
+      } catch (e) {
+        setPreviews(prev => prev.map(p => p.id === newPreviews[i].id ? { ...p, loading: false, err: e.message } : p))
+        if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
+      }
+    }))
+    setBusy(false)
   }
 
   const save = async () => {
-    if (!preview) return
-    const entry = {
+    if (previews.length === 0) return
+    const newEntries = previews.map(p => ({
       Date: date,
       Meal: meal,
-      'Food Description': desc.trim(),
-      Calories: preview.calories,
-      'Protein (g)': preview.protein_g,
-      'Calcium (mg)': preview.calcium_mg,
-      'Veg Servings': preview.veg_servings,
-      'Omega-3': preview.omega3,
+      'Food Description': p.name.trim(),
+      Calories: p.calories,
+      'Protein (g)': p.protein_g,
+      'Calcium (mg)': p.calcium_mg,
+      'Veg Servings': p.veg_servings,
+      'Omega-3': p.omega3,
       Notes: '',
-    }
-    await onAdd(entry)
-    setDesc(''); setPreview(null); setErr(''); setEditing(false)
+    }))
+    await onAdd(newEntries)
+    setDesc(''); setPreviews([]); setErr('')
   }
 
-  const updatePreview = (key, val) => setPreview(p => ({ ...p, [key]: val }))
+  const updatePreview = (id, key, val) => {
+    setPreviews(prev => prev.map(p => p.id === id ? { ...p, [key]: val } : p))
+  }
+
+  const removePreview = (id) => {
+    setPreviews(prev => prev.filter(p => p.id !== id))
+  }
+
+  const totals = previews.reduce((acc, p) => ({
+    calories: acc.calories + num(p.calories),
+    protein_g: acc.protein_g + num(p.protein_g),
+    calcium_mg: acc.calcium_mg + num(p.calcium_mg),
+    veg_servings: acc.veg_servings + num(p.veg_servings),
+    omega3: acc.omega3 || p.omega3 === 'Y',
+  }), { calories: 0, protein_g: 0, calcium_mg: 0, veg_servings: 0, omega3: false })
 
   return (
     <div className="card">
@@ -525,51 +636,44 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
       {err && <div className="banner error">{err}</div>}
 
-      {!preview && (
+      {previews.length === 0 && (
         <button className="btn" onClick={estimate} disabled={busy || !desc.trim()}>
           {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate nutrition'}
         </button>
       )}
 
-      {preview && (
-        <div className="preview-card">
-          <div className="flex justify-between items-center">
-            <strong>Estimated nutrition</strong>
-            <span className={`muted confidence-${preview.confidence}`}>
-              confidence: {preview.confidence}
-            </span>
-          </div>
-          <div className="stat-grid">
-            {editing ? (
-              <>
-                <NumStat label="Calories" value={preview.calories} onChange={v => updatePreview('calories', v)} />
-                <NumStat label="Protein (g)" value={preview.protein_g} onChange={v => updatePreview('protein_g', v)} />
-                <NumStat label="Calcium (mg)" value={preview.calcium_mg} onChange={v => updatePreview('calcium_mg', v)} />
-                <NumStat label="Veg srv" value={preview.veg_servings} step="0.5" onChange={v => updatePreview('veg_servings', v)} />
-                <div className="stat">
-                  <select value={preview.omega3} onChange={e => updatePreview('omega3', e.target.value)} style={{ width: '100%' }}>
-                    <option value="Y">Omega-3 Y</option>
-                    <option value="N">Omega-3 N</option>
-                  </select>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="stat"><div className="v">{preview.calories}</div><div className="l">kcal</div></div>
-                <div className="stat"><div className="v">{preview.protein_g}</div><div className="l">protein g</div></div>
-                <div className="stat"><div className="v">{preview.calcium_mg}</div><div className="l">calcium mg</div></div>
-                <div className="stat"><div className="v">{preview.veg_servings}</div><div className="l">veg srv</div></div>
-                <div className="stat"><div className="v">{preview.omega3}</div><div className="l">omega-3</div></div>
-              </>
-            )}
-          </div>
-          <div className="flex gap-8" style={{ marginTop: 12 }}>
-            <button className="btn" onClick={save}>Save entry</button>
-            <button className="btn btn-secondary" onClick={() => setEditing(!editing)}>
-              {editing ? 'Done editing' : 'Edit values'}
-            </button>
-            <button className="btn btn-secondary" onClick={() => setPreview(null)}>Discard</button>
-          </div>
+      {previews.length > 0 && (
+        <div className="previews-container" style={{ marginTop: 16, background: 'var(--accent-soft)', padding: 12, borderRadius: 10 }}>
+           <div className="flex justify-between items-center" style={{ marginBottom: 12 }}>
+             <strong>Estimated items</strong>
+             {busy && <span className="spinner" />}
+           </div>
+
+           {previews.map(p => (
+             <PreviewItem
+               key={p.id}
+               item={p}
+               onChange={(key, val) => updatePreview(p.id, key, val)}
+               onRemove={() => removePreview(p.id)}
+             />
+           ))}
+
+           <div className="preview-card" style={{ background: 'white', border: '1px solid var(--border)', margin: '12px 0 0' }}>
+             <div className="flex justify-between items-center">
+               <strong>Total</strong>
+             </div>
+             <div className="stat-grid">
+                <div className="stat"><div className="v">{totals.calories}</div><div className="l">kcal</div></div>
+                <div className="stat"><div className="v">{totals.protein_g}</div><div className="l">protein g</div></div>
+                <div className="stat"><div className="v">{totals.calcium_mg}</div><div className="l">calcium mg</div></div>
+                <div className="stat"><div className="v">{totals.veg_servings}</div><div className="l">veg srv</div></div>
+                <div className="stat"><div className="v">{totals.omega3 ? 'Y' : 'N'}</div><div className="l">omega-3</div></div>
+             </div>
+             <div className="flex gap-8" style={{ marginTop: 12 }}>
+                <button className="btn" onClick={save} disabled={busy}>Save all</button>
+                <button className="btn btn-secondary" onClick={() => setPreviews([])}>Discard all</button>
+             </div>
+           </div>
         </div>
       )}
     </div>
