@@ -224,16 +224,6 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     setEntries(sorted)
   }
 
-  const upsertSuggestionAndSave = async (item) => {
-    const next = upsertSuggestion(suggestions, item)
-    setSuggestions(next)
-    try {
-      await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(next))
-    } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
-    }
-  }
-
   const addEntries = async (newEntries) => {
     let nextLog = entries
     for (const e of newEntries) {
