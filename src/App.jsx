@@ -225,16 +225,6 @@ export default function App() {
     setRecipes(newRecipes)
   }
 
-  const upsertSuggestionAndSave = async (item) => {
-    const next = upsertSuggestion(suggestions, item)
-    setSuggestions(next)
-    try {
-      await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(next))
-    } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
-    }
-  }
-
   const addEntries = async (newEntries) => {
     // 1. Update log (merging items that share Date+Meal)
     let nextLog = logEntries
@@ -455,7 +445,7 @@ function PreviewItem({ item, onChange, onRemove, onAdd }) {
           <button className="icon-btn" onClick={() => setEditing(!editing)} title={editing ? 'Done' : 'Edit name'} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>
             {editing ? '✅' : '✏️'}
           </button>
-          <button className="icon-btn" onClick={onAdd} title="Save this item" disabled={item.loading} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>➕</button>
+          <button className="icon-btn" onClick={onAdd} title="Save this item" style={{ minHeight: 0, minWidth: 0, padding: 4 }}>➕</button>
           <button className="icon-btn" onClick={onRemove} title="Remove" style={{ minHeight: 0, minWidth: 0, padding: 4 }}>🗑</button>
         </div>
       </div>
@@ -569,9 +559,9 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     await Promise.all(parts.map(async (part, i) => {
       try {
         const result = await llm.estimateNutrition(part, { recipes })
-        setPreviews(prev => prev.map(p => p.id === newPreviews[i].id ? { ...p, ...result, loading: false } : p))
+        setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
       } catch (e) {
-        setPreviews(prev => prev.map(p => p.id === newPreviews[i].id ? { ...p, loading: false, err: e.message } : p))
+        setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, loading: false, err: e.message } : p))
         if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
       }
     }))
@@ -596,7 +586,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
   }
 
   const updatePreview = (id, key, val) => {
-    setPreviews(prev => prev.map(p => p.id === id ? { ...p, [key]: val } : p))
+    setPreviews(prev => prev.map(p => p.id === id ? { ...p, [key]: val, loading: false, err: undefined } : p))
   }
 
   const removePreview = (id) => {
@@ -688,7 +678,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                 <div className="stat"><div className="v">{totals.omega3 ? 'Y' : 'N'}</div><div className="l">omega-3</div></div>
              </div>
              <div className="flex gap-8" style={{ marginTop: 12 }}>
-                <button className="btn" onClick={save} disabled={busy}>Save all</button>
+                <button className="btn" onClick={save}>Save all</button>
                 <button className="btn btn-secondary" onClick={() => setPreviews([])}>Discard all</button>
              </div>
            </div>
