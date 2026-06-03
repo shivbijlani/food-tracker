@@ -9,7 +9,10 @@ export function parseTable(content, expectedHeaders) {
       const headers = splitRow(line)
       const sep = (lines[i + 1] || '').trim()
       if (/^\|[-\s|:]+\|$/.test(sep)) {
-        if (!expectedHeaders || expectedHeaders.every(h => headers.includes(h))) {
+        // Only require the first two headers as a discriminator so that
+        // new optional columns don't break reading of older files.
+        const required = expectedHeaders ? expectedHeaders.slice(0, 2) : null
+        if (!required || required.every(h => headers.includes(h))) {
           const rows = []
           let j = i + 2
           while (j < lines.length) {
