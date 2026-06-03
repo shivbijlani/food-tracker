@@ -71,16 +71,16 @@ export function detectWaterOz(description) {
   const lower = description.toLowerCase()
   if (!WATER_KEYWORDS.some(kw => lower.includes(kw))) return 0
 
-  const unitMatch = lower.match(/(\d+(?:\.\d+)?)\s*(oz|ml|l\b|litre|liter|cup|glass|bottle|can)/)
+  const unitMatch = lower.match(/(\d+(?:\.\d+)?)\s*(fl\.?\s*oz|ounces?|oz|ml|milliliters?|litres?|liters?|l\b|cups?|glasses?|bottles?|cans?)/)
   if (unitMatch) {
     const qty = parseFloat(unitMatch[1])
-    const unit = unitMatch[2]
-    if (unit === 'oz') return Math.round(qty / 2) * 2
-    if (unit === 'ml') return Math.round(qty / 29.5 / 2) * 2
-    if (unit === 'l' || unit.startsWith('litr') || unit.startsWith('liter')) return Math.round(qty * 33.8 / 2) * 2
-    if (unit === 'cup' || unit === 'glass') return qty * 8
-    if (unit === 'bottle') return qty * 16
-    if (unit === 'can') return qty * 12
+    const unit = unitMatch[2].replace(/\s+/g, '')
+    if (/^(fl\.?oz|ounces?|oz)/.test(unit)) return Math.round(qty / 2) * 2
+    if (/^ml|^milliliter/.test(unit)) return Math.round(qty / 29.5 / 2) * 2
+    if (/^l(itr|iter)?$/.test(unit)) return Math.round(qty * 33.8 / 2) * 2
+    if (/^cups?|^glasses?/.test(unit)) return qty * 8
+    if (/^bottles?/.test(unit)) return qty * 16
+    if (/^cans?/.test(unit)) return qty * 12
   }
 
   const numMatch = lower.match(/^(\d+(?:\.\d+)?)\s+/)
