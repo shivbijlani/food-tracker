@@ -465,7 +465,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
     protein: acc.protein + num(e['Protein (g)']),
     calcium: acc.calcium + num(e['Calcium (mg)']),
     veg: acc.veg + num(e['Veg Servings']),
-    water: Math.round((acc.water + num(e['Water (glasses)'])) * 2) / 2,
+    water: Math.round((acc.water + num(e['Water (oz)'])) * 2) / 2,
     omega3: acc.omega3 || e['Omega-3'] === 'Y',
   }), { calories: 0, protein: 0, calcium: 0, veg: 0, water: 0, omega3: false })
 
@@ -476,7 +476,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
     { label: 'Protein', value: totals.protein, unit: 'g', goal: goalMap.Protein },
     { label: 'Calcium', value: totals.calcium, unit: 'mg', goal: goalMap.Calcium },
     { label: 'Vegetables', value: totals.veg, unit: 'srv', goal: goalMap.Vegetables },
-    { label: 'Water', value: totals.water, unit: 'glasses', goal: goalMap.Water },
+    { label: 'Water', value: totals.water, unit: 'oz', goal: goals.reduce((found, g) => found || (/^(water|hydration)$/i.test((g.Nutrient || '').trim()) ? parseGoalTarget(g.Target) : null), null) },
   ]
 
   return (
@@ -563,7 +563,7 @@ function PreviewItem({ item, onChange, onRemove, onAdd }) {
             <NumStat label="pro g" value={item.protein_g} onChange={v => onChange('protein_g', v)} />
             <NumStat label="Ca mg" value={item.calcium_mg} onChange={v => onChange('calcium_mg', v)} />
             <NumStat label="veg srv" value={item.veg_servings} step="0.5" onChange={v => onChange('veg_servings', v)} />
-            <NumStat label="water" value={item.water_glasses} step="0.5" onChange={v => onChange('water_glasses', v)} />
+            <NumStat label="water oz" value={item.water_oz} step="2" onChange={v => onChange('water_oz', v)} />
             <div className="stat">
               <select value={item.omega3} onChange={e => onChange('omega3', e.target.value)} style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', fontSize: 14, fontWeight: 700 }}>
                 <option value="Y">Y</option>
@@ -578,7 +578,7 @@ function PreviewItem({ item, onChange, onRemove, onAdd }) {
             <div className="stat"><div className="v">{item.protein_g}</div><div className="l">pro g</div></div>
             <div className="stat"><div className="v">{item.calcium_mg}</div><div className="l">Ca mg</div></div>
             <div className="stat"><div className="v">{item.veg_servings}</div><div className="l">veg srv</div></div>
-            <div className="stat"><div className="v">{item.water_glasses}</div><div className="l">water</div></div>
+            <div className="stat"><div className="v">{item.water_oz}</div><div className="l">water</div></div>
             <div className="stat"><div className="v">{item.omega3}</div><div className="l">omega-3</div></div>
           </>
         )}
@@ -631,7 +631,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
       protein_g: s.protein,
       calcium_mg: s.calcium_mg,
       veg_servings: s.veg_servings,
-      water_glasses: s.water_glasses || 0,
+      water_oz: s.water_oz || 0,
       omega3: s.omega3 || 'N',
       confidence: 'high',
       loading: false,
@@ -657,7 +657,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
       protein_g: 0,
       calcium_mg: 0,
       veg_servings: 0,
-      water_glasses: 0,
+      water_oz: 0,
       omega3: 'N',
       confidence: 'medium',
     }))
@@ -686,7 +686,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
       'Protein (g)': p.protein_g,
       'Calcium (mg)': p.calcium_mg,
       'Veg Servings': p.veg_servings,
-      'Water (glasses)': p.water_glasses,
+      'Water (oz)': p.water_oz,
       'Omega-3': p.omega3,
       Notes: '',
     }))
@@ -707,9 +707,9 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     protein_g: acc.protein_g + num(p.protein_g),
     calcium_mg: acc.calcium_mg + num(p.calcium_mg),
     veg_servings: acc.veg_servings + num(p.veg_servings),
-    water_glasses: Math.round((acc.water_glasses + num(p.water_glasses)) * 2) / 2,
+    water_oz: Math.round((acc.water_oz + num(p.water_oz)) * 2) / 2,
     omega3: acc.omega3 || p.omega3 === 'Y',
-  }), { calories: 0, protein_g: 0, calcium_mg: 0, veg_servings: 0, water_glasses: 0, omega3: false })
+  }), { calories: 0, protein_g: 0, calcium_mg: 0, veg_servings: 0, water_oz: 0, omega3: false })
 
   return (
     <div className="card">

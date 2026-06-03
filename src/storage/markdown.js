@@ -69,7 +69,7 @@ export function replaceFirstTable(content, headers, rows) {
 
 export const DAILY_LOG_HEADERS = [
   'Date', 'Meal', 'Food Description', 'Calories', 'Protein (g)',
-  'Calcium (mg)', 'Veg Servings', 'Water (glasses)', 'Omega-3', 'Notes'
+  'Calcium (mg)', 'Veg Servings', 'Water (oz)', 'Omega-3', 'Notes'
 ]
 
 export const GOALS_HEADERS = ['Nutrient', 'Target', 'Notes']
