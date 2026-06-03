@@ -6,7 +6,7 @@ import {
 import '../packages/install-prompt/src/styles/install-prompt.css'
 import { storage, getEngine, initStorage, detectModeFromData, registerSyncWorker, PROVIDERS, getProviderName, getAvailableProviders, getPrimaryId, setPrimary } from './storage/storage.js'
 import {
-  DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS,
+  DAILY_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS, WEIGHT_HEADERS,
 } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
@@ -75,6 +75,7 @@ export default function App() {
   const [goals, setGoals] = useState([])
   const [recipes, setRecipes] = useState([])
   const [suggestions, setSuggestions] = useState([])
+  const [weightEntries, setWeightEntries] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   // Mode state — respect explicit user choice; auto-detect from data on first load.
@@ -142,17 +143,19 @@ export default function App() {
     try {
       const curKey = currentMonthKey()
       const curName = entryFileName('entries', curKey)
-      const [curText, goalsText, recipesText, suggestionsText] = await Promise.all([
+      const [curText, goalsText, recipesText, suggestionsText, weightText] = await Promise.all([
         storage.readFile(curName),
         storage.readFile('goals.md'),
         storage.readFile('recipes.md'),
         storage.readFile(SUGGESTIONS_FILE),
+        storage.readFile('weight.md'),
       ])
       setLogEntries(readEntries(curText, DAILY_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
       const recipeRows = readEntries(recipesText, RECIPE_HEADERS).rows
       setRecipes(recipeRows)
       setSuggestions(parseSuggestions(suggestionsText || ''))
+      setWeightEntries(readEntries(weightText, WEIGHT_HEADERS).rows)
       setError('')
 
       // Lazy-load history in the background (for LogView).
@@ -222,6 +225,20 @@ export default function App() {
     const next = writeEntries(original, RECIPE_HEADERS, newRecipes, { kind: 'recipes' })
     await storage.writeFile('recipes.md', next)
     setRecipes(newRecipes)
+  }
+
+  const saveWeight = async (entry) => {
+    const original = await storage.readFile('weight.md')
+    const rows = readEntries(original, WEIGHT_HEADERS).rows
+    // Upsert: replace existing entry for same date, otherwise append
+    const idx = rows.findIndex(r => r.Date === entry.Date)
+    const newRows = idx >= 0
+      ? [...rows.slice(0, idx), entry, ...rows.slice(idx + 1)]
+      : [...rows, entry]
+    newRows.sort((a, b) => a.Date.localeCompare(b.Date))
+    const next = writeEntries(original, WEIGHT_HEADERS, newRows, { kind: 'weight' })
+    await storage.writeFile('weight.md', next)
+    setWeightEntries(newRows)
   }
 
   const upsertSuggestionAndSave = async (item) => {
@@ -320,7 +337,7 @@ export default function App() {
       {/* Coaching tip — shown on load if LLM connected, refreshed after each save */}
       <CoachingCard text={coaching} onDismiss={() => setCoaching(null)} />
 
-      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} />}
+      {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntryWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} weightEntries={weightEntries} onLogWeight={saveWeight} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
       {tab === 'goals' && <GoalsView goals={goals} />}
@@ -340,7 +357,91 @@ export default function App() {
   )
 }
 
-function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggestions }) {
+function WeightRow({ weightEntries, onLog, today }) {
+  const sorted = [...(weightEntries || [])].sort((a, b) => b.Date.localeCompare(a.Date))
+  const todayEntry = sorted.find(e => e.Date === today)
+  const prevEntry = sorted.find(e => e.Date < today)
+
+  const [val, setVal] = useState('')
+  const [unit, setUnit] = useState(() => sorted[0]?.Unit || 'kg')
+  const [editing, setEditing] = useState(false)
+
+  const diff = todayEntry && prevEntry
+    ? +(parseFloat(todayEntry.Weight) - parseFloat(prevEntry.Weight)).toFixed(1)
+    : null
+
+  const handleLog = () => {
+    if (!val.trim()) return
+    onLog({ Date: today, Weight: val.trim(), Unit: unit, Notes: '' })
+    setVal('')
+    setEditing(false)
+  }
+
+  const showInput = !todayEntry || editing
+
+  return (
+    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 14 }}>
+      <span style={{ width: 110, color: 'var(--text-muted)', fontWeight: 500, flexShrink: 0 }}>Weight</span>
+
+      {!showInput ? (
+        <>
+          <span style={{ fontWeight: 600 }}>{todayEntry.Weight} {todayEntry.Unit}</span>
+          {diff !== null && (
+            <span style={{
+              fontSize: 13, fontWeight: 500,
+              color: diff > 0 ? 'var(--warn)' : diff < 0 ? 'var(--good)' : 'var(--text-muted)',
+            }}>
+              {diff > 0 ? `↑ ${diff}` : diff < 0 ? `↓ ${Math.abs(diff)}` : '→'}{' '}
+              {diff !== 0 ? todayEntry.Unit : 'no change'}
+            </span>
+          )}
+          <button
+            className="icon-btn"
+            onClick={() => { setVal(todayEntry.Weight); setUnit(todayEntry.Unit || 'kg'); setEditing(true) }}
+            title="Update today's weight"
+            style={{ fontSize: 12, marginLeft: 2 }}
+          >✏️</button>
+        </>
+      ) : (
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
+          {!todayEntry && prevEntry && (
+            <span style={{ color: 'var(--text-muted)', fontSize: 12, marginRight: 4 }}>
+              Last: {prevEntry.Weight} {prevEntry.Unit}
+            </span>
+          )}
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleLog()}
+            placeholder="0.0"
+            style={{ width: 72, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}
+          />
+          <select
+            value={unit}
+            onChange={e => setUnit(e.target.value)}
+            style={{ padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, background: 'var(--card)', color: 'inherit' }}
+          >
+            <option>kg</option>
+            <option>lbs</option>
+          </select>
+          <button className="btn btn-secondary" onClick={handleLog} disabled={!val.trim()} style={{ padding: '4px 10px', fontSize: 13 }}>
+            Log
+          </button>
+          {editing && (
+            <button className="btn btn-secondary" onClick={() => setEditing(false)} style={{ padding: '4px 10px', fontSize: 13 }}>
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggestions, weightEntries, onLogWeight }) {
   const today = todayStr()
   const todays = entries.filter(e => e.Date === today)
 
@@ -382,6 +483,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
         <div className="muted" style={{ marginTop: 8 }}>
           Omega-3 today: <strong style={{ color: totals.omega3 ? 'var(--good)' : 'var(--bad)' }}>{totals.omega3 ? '✓ Yes' : '✗ Not yet'}</strong>
         </div>
+        <WeightRow weightEntries={weightEntries} onLog={onLogWeight} today={today} />
       </div>
 
       <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} suggestions={suggestions} />
