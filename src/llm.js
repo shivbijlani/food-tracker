@@ -142,9 +142,16 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
   }
 
   const recipeContext = recipes.length
-    ? `\n\nKnown recipes (nutrition is per serving):\n${recipes.map(r =>
-        `- ${r.Recipe}${r.Servings ? ` (makes ${r.Servings} servings)` : ''}: ${r.Calories} kcal, ${r['Protein (g)']}g protein, ${r['Calcium (mg)']}mg calcium per serving`
-      ).join('\n')}`
+    ? `\n\nKnown recipes (values below are per serving):\n${recipes.map(r => {
+        const s = Number(r.Servings)
+        const div = isFinite(s) && s > 0 ? s : 1
+        const per = (v) => {
+          const n = Number(v)
+          if (!isFinite(n) || n <= 0) return '?'
+          return Math.round((n / div) * 10) / 10
+        }
+        return `- ${r.Recipe}${r.Servings ? ` (makes ${r.Servings} servings)` : ''}: ${per(r.Calories)} kcal, ${per(r['Protein (g)'])}g protein, ${per(r['Calcium (mg)'])}mg calcium per serving`
+      }).join('\n')}`
     : ''
 
   const model = getModel(provider)
@@ -290,16 +297,24 @@ const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preambl
 // message instead. Small/free models often echo system prompts verbatim,
 // so we put behavioural guidance in the user turn and keep the system
 // message minimal. Used by the leak filter below as well.
-const COACH_GUIDANCE = `You are a friendly nutrition coach focused on daily protein. The user just logged a meal. Given the data below, write 1–2 short sentences of personalized encouragement, observation, or one actionable tip. Be specific (mention a number, pattern, or named meal). Plain text only — no markdown, no lists, no headings, no "Rules:" sections. Max 50 words. Never invent data.`
+const COACH_GUIDANCE = `As a performance nutritionist, respond to this meal log entry.
+
+Write 2–3 plain-text sentences (60 words max) that:
+1. Assess progress in the context of the current time of day. Early in the day it is normal and expected to be below the daily totals, so never frame that as "falling behind" or "below every target" — only treat a gap as a concern if the meals left in the day realistically can't cover it. Skip praise unless they are genuinely on track.
+2. State the most important remaining gap as what's still left to eat for the rest of the day, in specific numbers.
+3. Name 1–2 foods from their history that would efficiently close the gap.
+
+Plain text only — no markdown, no bullet points, no headings. Never invent numbers or foods not in the provided data.`
 
 /**
- * Get a short coaching/encouragement message from the configured LLM.
- * Silently returns `null` if not configured or if the call fails — never throws
- * UI-breaking errors. Pass an AbortSignal to cancel in-flight requests when
- * the user logs again quickly.
+ * Get a short coaching message from the configured LLM.
+ * Silently returns `null` if not configured or if the call fails.
  *
  * @param {{ recentEntriesText?: string, systemsText?: string, proteinGoal?: number,
- *           lastMeal?: string, lastProteinLogged?: number|string, signal?: AbortSignal }} ctx
+ *           lastMeal?: string, lastProteinLogged?: number|string,
+ *           todayEntriesText?: string, todayTotals?: object,
+ *           goalsText?: string, frequentFoodsText?: string, currentTime?: string,
+ *           signal?: AbortSignal }} ctx
  * @returns {Promise<string|null>}
  */
 export async function getCoaching(ctx = {}) {
@@ -311,23 +326,40 @@ export async function getCoaching(ctx = {}) {
     recentEntriesText = '',
     systemsText = '',
     proteinGoal,
-    lastMeal = '',
-    lastProteinLogged = '',
+    lastMealLine = '',
+    todayEntriesText = '',
+    todayTotals = null,
+    goalsText = '',
+    frequentFoodsText = '',
+    currentTime = '',
     signal,
   } = ctx
 
   // Cap context sizes to keep latency + token costs predictable.
-  const trimmedEntries = String(recentEntriesText).slice(-4000)
-  const trimmedSystems = String(systemsText).slice(0, 2000)
+  const trimmedEntries = String(recentEntriesText).slice(-2000)
+  const trimmedSystems = String(systemsText).slice(0, 1000)
+
+  const todaySection = todayEntriesText
+    ? `Today's meals so far:\n${todayEntriesText}`
+    : 'No meals logged today yet.'
+
+  const totalsLine = todayTotals
+    ? `Today's totals: ${todayTotals.calories}kcal, ${todayTotals.protein}g protein, ${todayTotals.calcium}mg calcium, ${todayTotals.veg} veg servings, omega-3: ${todayTotals.omega3 ? 'yes' : 'no'}`
+    : ''
 
   const userContent = [
     COACH_GUIDANCE,
     '',
-    proteinGoal ? `Daily protein goal: ${proteinGoal}g.` : '',
-    lastMeal ? `Just logged: "${lastMeal}" (${lastProteinLogged}g protein).` : '',
+    goalsText ? `Daily goals: ${goalsText}` : (proteinGoal ? `Daily protein goal: ${proteinGoal}g` : ''),
+    currentTime ? `Current time: ${currentTime}. Goals are whole-day targets — judge progress relative to how much of the day is left, not as if the day were over.` : '',
+    '',
+    todaySection,
+    totalsLine,
+    lastMealLine ? `\nJust logged: ${lastMealLine}.` : '',
+    frequentFoodsText ? `\nFoods this user has tracked before (suggest from these):\n${frequentFoodsText}` : '',
     trimmedSystems ? `\nPersonal systems:\n${trimmedSystems}` : '',
-    trimmedEntries ? `\nRecent log (newest last):\n${trimmedEntries}` : '',
-  ].filter(s => s !== undefined && s !== null).join('\n')
+    trimmedEntries ? `\nRecent history (last 30 days, for pattern context):\n${trimmedEntries}` : '',
+  ].filter(Boolean).join('\n')
 
   const model = getModel(provider)
 

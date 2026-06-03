@@ -55,9 +55,8 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
   }
 
   // Listen for SW status broadcasts.
-  let bc = null
   if (typeof BroadcastChannel !== 'undefined') {
-    bc = new BroadcastChannel(CHANNEL)
+    const bc = new BroadcastChannel(CHANNEL)
     bc.onmessage = (evt) => {
       if (!evt.data || evt.data.type !== 'status') return
       status = { ...status, ...evt.data.status }

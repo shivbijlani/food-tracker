@@ -107,6 +107,58 @@ export function upsertSuggestion(items, incoming) {
   return next
 }
 
+// Number of servings a recipe yields. Recipes store whole-recipe totals, so
+// this is the divisor used to derive per-serving nutrition. Blank/invalid
+// values fall back to 1 (treat the recipe as a single serving).
+export function recipeServingsCount(r) {
+  const n = Number(r && r.Servings)
+  return isFinite(n) && n > 0 ? n : 1
+}
+
+// Generate ½-serving, 1-serving, and 2-serving suggestion entries for recipes.
+// Recipes store WHOLE-RECIPE totals plus a Servings count, so per-serving
+// nutrition is total / servings; we then scale that by the portion factor.
+// RECIPE_HEADERS: ['Recipe', 'Servings', 'Calories', 'Protein (g)', 'Calcium (mg)', 'Notes']
+export function expandRecipeServings(recipes) {
+  const out = []
+  for (const r of recipes) {
+    const name = (r.Recipe || '').trim()
+    if (!name) continue
+    const servings = recipeServingsCount(r)
+    const scale = (v, factor) => {
+      const n = Number(v)
+      if (!isFinite(n) || n <= 0) return ''
+      const result = Math.round((n / servings) * factor * 10) / 10
+      return String(result).replace(/\.0$/, '')
+    }
+    out.push({
+      name: `½ serving of ${name}`,
+      protein_g: scale(r['Protein (g)'], 0.5),
+      calories:  scale(r.Calories, 0.5),
+      calcium_mg: scale(r['Calcium (mg)'], 0.5),
+      veg_servings: '',
+      omega3: '',
+    })
+    out.push({
+      name: `1 serving of ${name}`,
+      protein_g: scale(r['Protein (g)'], 1),
+      calories:  scale(r.Calories, 1),
+      calcium_mg: scale(r['Calcium (mg)'], 1),
+      veg_servings: '',
+      omega3: '',
+    })
+    out.push({
+      name: `2 servings of ${name}`,
+      protein_g: scale(r['Protein (g)'], 2),
+      calories:  scale(r.Calories, 2),
+      calcium_mg: scale(r['Calcium (mg)'], 2),
+      veg_servings: '',
+      omega3: '',
+    })
+  }
+  return out
+}
+
 // Generate virtual "Half {name}" variants for items with usable nutrition.
 // These are NOT stored — they're recomputed at read time. We skip items that
 // already start with "Half " to prevent stacking ("Half Half X").
@@ -134,42 +186,4 @@ export function expandWithHalves(items) {
     })
   }
   return out
-}
-
-// Build an initial set of suggestions from existing history. Used as a
-// one-time backfill when suggestions.csv doesn't yet exist.
-// Pass advanced entries (with 'Food Description') and/or simple entries
-// (with 'Meal' and 'Protein (g)'). Recipes are passed separately.
-export function backfillFromHistory({ advancedEntries = [], simpleEntries = [], recipes = [] } = {}) {
-  let list = []
-  for (const r of recipes) {
-    if (!r.Recipe) continue
-    list = upsertSuggestion(list, {
-      name: r.Recipe,
-      protein_g: r['Protein (g)'],
-      calories: r.Calories,
-      calcium_mg: r['Calcium (mg)'],
-    })
-  }
-  for (const e of advancedEntries) {
-    const name = e['Food Description']
-    if (!name) continue
-    list = upsertSuggestion(list, {
-      name,
-      protein_g: e['Protein (g)'],
-      calories: e.Calories,
-      calcium_mg: e['Calcium (mg)'],
-      veg_servings: e['Veg Servings'],
-      omega3: e['Omega-3'],
-    })
-  }
-  for (const e of simpleEntries) {
-    const name = e.Meal
-    if (!name) continue
-    list = upsertSuggestion(list, {
-      name,
-      protein_g: e['Protein (g)'],
-    })
-  }
-  return list
 }
