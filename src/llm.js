@@ -109,10 +109,11 @@ const NUTRITION_JSON_SCHEMA = {
     protein_g: { type: 'number', description: 'grams of protein' },
     calcium_mg: { type: 'number', description: 'milligrams of calcium' },
     veg_servings: { type: 'number', description: '1 serving = ~1 cup raw or 1/2 cup cooked vegetables' },
+    water_glasses: { type: 'number', description: 'glasses of hydrating fluid. Plain water, sparkling water, and herbal tea COUNT (1 glass ≈ 250ml). Coffee, black tea, alcohol, juice, and milk do NOT count.' },
     omega3: { type: 'string', enum: ['Y', 'N'], description: 'Y if the meal contains a meaningful source (fatty fish, walnuts, flax, chia)' },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
   },
-  required: ['calories', 'protein_g', 'calcium_mg', 'veg_servings', 'omega3', 'confidence'],
+  required: ['calories', 'protein_g', 'calcium_mg', 'veg_servings', 'water_glasses', 'omega3', 'confidence'],
   additionalProperties: false,
 }
 
@@ -124,11 +125,12 @@ Required JSON schema:
   "protein_g": number,          // grams of protein
   "calcium_mg": number,         // milligrams of calcium
   "veg_servings": number,       // 1 serving = ~1 cup raw or 1/2 cup cooked vegetables
+  "water_glasses": number,      // glasses of hydrating fluid (plain water, sparkling water, herbal tea COUNT; coffee, black tea, alcohol, juice, milk do NOT)
   "omega3": "Y" | "N",          // Y if the meal contains a meaningful source (fatty fish, walnuts, flax, chia)
   "confidence": "low" | "medium" | "high"
 }
 
-Be conservative. Round calories/calcium to nearest 10, protein to nearest 1, veg_servings to 0.5. Use values from typical USDA food data. If the input is empty or non-food, return all zeros with confidence "low".`
+Be conservative. Round calories/calcium to nearest 10, protein to nearest 1, veg_servings to 0.5, water_glasses to 0.5. Use values from typical USDA food data. If the input is empty or non-food, return all zeros with confidence "low".`
 
 export async function estimateNutrition(foodDescription, { recipes = [], signal } = {}) {
   const provider = getProvider()
@@ -284,6 +286,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
     protein_g: Math.round(Number(parsed.protein_g) || 0),
     calcium_mg: Math.round(Number(parsed.calcium_mg) || 0),
     veg_servings: Math.round((Number(parsed.veg_servings) || 0) * 2) / 2,
+    water_glasses: Math.round((Number(parsed.water_glasses) || 0) * 2) / 2,
     omega3: parsed.omega3 === 'Y' || parsed.omega3 === true ? 'Y' : 'N',
     confidence: ['low', 'medium', 'high'].includes(parsed.confidence) ? parsed.confidence : 'medium',
   }
