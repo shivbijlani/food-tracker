@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { BRAND } from './branding.js'
 import { storage, getEngine } from './storage/storage.js'
 import { debounce } from './debounce.js'
@@ -492,11 +492,13 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
   const [items, setItems] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const abortControllerRef = useRef(null)
 
   // Re-evaluate LLM readiness on each render — cheap (localStorage read).
   const llmReady = llm.isReady()
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+  useEffect(() => () => abortControllerRef.current?.abort(), [])
 
   // Suggestions = suggestions.csv (food database) + recipes, with virtual
   // "Half X" variants for every item that has nutrition.
@@ -546,6 +548,9 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
     setBusy(true)
     setErr('')
+    abortControllerRef.current?.abort()
+    const ctrl = new AbortController()
+    abortControllerRef.current = ctrl
 
     const newItems = parts.map(name => ({
       id: Math.random().toString(36).slice(2),
@@ -557,19 +562,21 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
     await Promise.all(parts.map(async (part, i) => {
       try {
-        const result = await llm.estimateNutrition(part, { recipes })
-        setItems(prev => prev.map(item => item.id === newItems[i].id ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
+        const result = await llm.estimateNutrition(part, { recipes, signal: ctrl.signal })
+        setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
       } catch (e) {
-        setItems(prev => prev.map(item => item.id === newItems[i].id ? { ...item, loading: false, err: e.message } : item))
+        if (e.name === 'AbortError') return
+        setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, loading: false, err: e.message } : item))
         if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
       }
     }))
-    setBusy(false)
+    if (!ctrl.signal.aborted) setBusy(false)
   }
 
   const save = async () => {
     const mealSnapshot = meal.trim()
     if (!mealSnapshot && items.length === 0) return
+    abortControllerRef.current?.abort()
 
     const entriesToSave = items.length > 0
       ? items.map(it => ({ Date: date, Meal: it.name.trim(), 'Protein (g)': it.protein || '0' }))
@@ -578,13 +585,17 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     await onAdd(entriesToSave)
 
     const totalProtein = entriesToSave.reduce((sum, e) => sum + num(e['Protein (g)']), 0)
-    setMeal(''); setItems([]); setErr('')
+    setMeal(''); setItems([]); setErr(''); setBusy(false)
     onAfterSave?.(mealSnapshot, totalProtein)
   }
 
   const estimateAndSave = async () => {
     if (!meal.trim()) return
     setBusy(true); setErr('')
+    abortControllerRef.current?.abort()
+    const ctrl = new AbortController()
+    abortControllerRef.current = ctrl
+
     const parts = meal.split(',').map(p => p.trim()).filter(Boolean)
     const newItems = parts.map(name => ({
       id: Math.random().toString(36).slice(2),
@@ -596,8 +607,8 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
     try {
       const results = await Promise.all(parts.map(async (part, i) => {
-        const result = await llm.estimateNutrition(part, { recipes })
-        setItems(prev => prev.map(item => item.id === newItems[i].id ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
+        const result = await llm.estimateNutrition(part, { recipes, signal: ctrl.signal })
+        setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
         return { Date: date, Meal: part, 'Protein (g)': String(result.protein_g ?? '0') }
       }))
 
@@ -606,18 +617,28 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
       setMeal(''); setItems([]); setErr('')
       onAfterSave?.(meal.trim(), totalProtein)
     } catch (e) {
+      if (e.name === 'AbortError') return
       setErr(e.message)
       if (e.code === 'LLM_NOT_CONFIGURED') openSettings('settings-llm')
     } finally {
-      setBusy(false)
+      if (!ctrl.signal.aborted) setBusy(false)
     }
   }
 
   const updateItem = (id, key, val) => {
-    setItems(prev => prev.map(it => it.id === id ? { ...it, [key]: val } : it))
+    setItems(prev => prev.map(it => it.id === id ? { ...it, [key]: val, loading: false } : it))
   }
 
   const removeItem = (id) => {
+    const item = items.find(it => it.id === id)
+    if (item?.loading) {
+       // If we're removing the last loading item, we can stop the spinner
+       const otherLoading = items.filter(it => it.id !== id && it.loading).length
+       if (otherLoading === 0) {
+         abortControllerRef.current?.abort()
+         setBusy(false)
+       }
+    }
     setItems(prev => prev.filter(it => it.id !== id))
   }
 
@@ -685,7 +706,11 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
           ))}
           <div className="flex justify-between items-center" style={{ marginTop: 8, padding: '0 4px' }}>
             <strong style={{ fontSize: 14 }}>Total: {Math.round(totalProtein)}g pro</strong>
-            <button className="btn btn-secondary" onClick={() => setItems([])} style={{ padding: '4px 10px', fontSize: 12 }}>Discard all</button>
+            <button className="btn btn-secondary" onClick={() => {
+              abortControllerRef.current?.abort()
+              setBusy(false)
+              setItems([])
+            }} style={{ padding: '4px 10px', fontSize: 12 }}>Discard all</button>
           </div>
         </div>
       )}
@@ -710,7 +735,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
             {busy ? <><span className="spinner" />Working…</> : '✨ Estimate & Save'}
           </button>
         ) : (
-          <button className="btn" onClick={save} disabled={busy || (!meal.trim() && items.length === 0)}>
+          <button className="btn" onClick={save} disabled={(!meal.trim() && items.length === 0)}>
             Save
           </button>
         )}

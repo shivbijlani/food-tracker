@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { BRAND } from './branding.js'
 import {
   InstallButton, InstallModal, InstallNudge, InstallSuccessToast,
@@ -23,7 +23,6 @@ import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
-import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
@@ -635,8 +634,10 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
   const [previews, setPreviews] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const abortControllerRef = useRef(null)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
+  useEffect(() => () => abortControllerRef.current?.abort(), [])
 
   // Suggestions = recipes (as ½ / 1 / 2 serving variants) + suggestions.csv
   // (non-recipe items with a "Half X" virtual entry for each).
@@ -689,6 +690,9 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
     setBusy(true)
     setErr('')
+    abortControllerRef.current?.abort()
+    const ctrl = new AbortController()
+    abortControllerRef.current = ctrl
 
     const newPreviews = parts.map(name => ({
       id: Math.random().toString(36).slice(2),
@@ -707,19 +711,21 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     // Parallel estimates
     await Promise.all(parts.map(async (part, i) => {
       try {
-        const result = await llm.estimateNutrition(part, { recipes })
+        const result = await llm.estimateNutrition(part, { recipes, signal: ctrl.signal })
         result.water_oz = detectWaterOz(part)
         setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
       } catch (e) {
+        if (e.name === 'AbortError') return
         setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, loading: false, err: e.message } : p))
         if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
       }
     }))
-    setBusy(false)
+    if (!ctrl.signal.aborted) setBusy(false)
   }
 
   const save = async () => {
     if (previews.length === 0) return
+    abortControllerRef.current?.abort()
     const newEntries = previews.map(p => ({
       Date: date,
       Meal: meal,
@@ -733,7 +739,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
       Notes: '',
     }))
     await onAdd(newEntries)
-    setDesc(''); setPreviews([]); setErr('')
+    setDesc(''); setPreviews([]); setErr(''); setBusy(false)
   }
 
   const updatePreview = (id, key, val) => {
@@ -741,6 +747,14 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
   }
 
   const removePreview = (id) => {
+    const item = previews.find(p => p.id === id)
+    if (item?.loading) {
+      const otherLoading = previews.filter(p => p.id !== id && p.loading).length
+      if (otherLoading === 0) {
+        abortControllerRef.current?.abort()
+        setBusy(false)
+      }
+    }
     setPreviews(prev => prev.filter(p => p.id !== id))
   }
 
@@ -831,7 +845,11 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
              </div>
              <div className="flex gap-8" style={{ marginTop: 12 }}>
                 <button className="btn" onClick={save}>Save all</button>
-                <button className="btn btn-secondary" onClick={() => setPreviews([])}>Discard all</button>
+                <button className="btn btn-secondary" onClick={() => {
+                  abortControllerRef.current?.abort()
+                  setBusy(false)
+                  setPreviews([])
+                }}>Discard all</button>
              </div>
            </div>
         </div>
