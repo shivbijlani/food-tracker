@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { BRAND } from './branding.js'
 import { storage, getEngine } from './storage/storage.js'
 import { debounce } from './debounce.js'
@@ -492,6 +492,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
   const [items, setItems] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const abortControllerRef = useRef(null)
 
   // Re-evaluate LLM readiness on each render — cheap (localStorage read).
   const llmReady = llm.isReady()
@@ -544,30 +545,47 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     }
     if (parts.length === 0) return
 
+    if (abortControllerRef.current) abortControllerRef.current.abort()
+    abortControllerRef.current = new AbortController()
+
     setBusy(true)
     setErr('')
 
+    const isLlmReady = llm.isReady()
     const newItems = parts.map(name => ({
       id: Math.random().toString(36).slice(2),
       name,
       protein: '',
-      loading: true,
+      loading: isLlmReady,
     }))
     setItems(newItems)
 
-    await Promise.all(parts.map(async (part, i) => {
-      try {
-        const result = await llm.estimateNutrition(part, { recipes })
-        setItems(prev => prev.map(item => item.id === newItems[i].id ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
-      } catch (e) {
-        setItems(prev => prev.map(item => item.id === newItems[i].id ? { ...item, loading: false, err: e.message } : item))
-        if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
+    if (!isLlmReady) {
+      setErr('LLM_NOT_CONFIGURED')
+      setBusy(false)
+      return
+    }
+
+    try {
+      await Promise.all(parts.map(async (part, i) => {
+        try {
+          const result = await llm.estimateNutrition(part, { recipes, signal: abortControllerRef.current.signal })
+          setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
+        } catch (e) {
+          if (e.name === 'AbortError') return
+          setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, loading: false, err: e.message } : item))
+          if (e.code === 'LLM_NOT_CONFIGURED') setErr('LLM_NOT_CONFIGURED')
+        }
+      }))
+    } finally {
+      if (!abortControllerRef.current.signal.aborted) {
+        setBusy(false)
       }
-    }))
-    setBusy(false)
+    }
   }
 
   const save = async () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort()
     const mealSnapshot = meal.trim()
     if (!mealSnapshot && items.length === 0) return
 
@@ -584,6 +602,9 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
   const estimateAndSave = async () => {
     if (!meal.trim()) return
+    if (abortControllerRef.current) abortControllerRef.current.abort()
+    abortControllerRef.current = new AbortController()
+
     setBusy(true); setErr('')
     const parts = meal.split(',').map(p => p.trim()).filter(Boolean)
     const newItems = parts.map(name => ({
@@ -596,25 +617,30 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
     try {
       const results = await Promise.all(parts.map(async (part, i) => {
-        const result = await llm.estimateNutrition(part, { recipes })
-        setItems(prev => prev.map(item => item.id === newItems[i].id ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
+        const result = await llm.estimateNutrition(part, { recipes, signal: abortControllerRef.current.signal })
+        setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
         return { Date: date, Meal: part, 'Protein (g)': String(result.protein_g ?? '0') }
       }))
+
+      if (abortControllerRef.current.signal.aborted) return
 
       await onAdd(results)
       const totalProtein = results.reduce((sum, e) => sum + num(e['Protein (g)']), 0)
       setMeal(''); setItems([]); setErr('')
       onAfterSave?.(meal.trim(), totalProtein)
     } catch (e) {
+      if (e.name === 'AbortError') return
       setErr(e.message)
-      if (e.code === 'LLM_NOT_CONFIGURED') openSettings('settings-llm')
+      if (e.code === 'LLM_NOT_CONFIGURED') setErr('LLM_NOT_CONFIGURED')
     } finally {
-      setBusy(false)
+      if (!abortControllerRef.current.signal.aborted) {
+        setBusy(false)
+      }
     }
   }
 
   const updateItem = (id, key, val) => {
-    setItems(prev => prev.map(it => it.id === id ? { ...it, [key]: val } : it))
+    setItems(prev => prev.map(it => it.id === id ? { ...it, [key]: val, loading: false, err: undefined } : it))
   }
 
   const removeItem = (id) => {
@@ -660,10 +686,11 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
                     />
                     <div className="flex gap-4">
                       <button className="icon-btn" onClick={() => {
+                        if (abortControllerRef.current) abortControllerRef.current.abort()
                         onAdd([{ Date: date, Meal: it.name.trim(), 'Protein (g)': it.protein || '0' }])
                         onAfterSave?.(it.name.trim(), num(it.protein))
                         removeItem(it.id)
-                      }} title="Save this item" disabled={it.loading} style={{ minWidth: 0, minHeight: 0, padding: 4 }}>➕</button>
+                      }} title="Save this item" style={{ minWidth: 0, minHeight: 0, padding: 4 }}>➕</button>
                       <button className="icon-btn" onClick={() => removeItem(it.id)} title="Remove" style={{ minWidth: 0, minHeight: 0, padding: 4 }}>🗑</button>
                     </div>
                  </div>
@@ -690,7 +717,19 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
         </div>
       )}
 
-      {err && <div className="banner error">{err}</div>}
+      {err === 'LLM_NOT_CONFIGURED' && (
+        <div className="banner" style={{ background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', marginBottom: 12 }}>
+          <div style={{ fontSize: 13 }}>
+            <span style={{ marginRight: 8 }}>✨</span>
+            Connect OpenRouter to estimate protein automatically.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => openrouterAuth.startAuth()} style={{ padding: '4px 8px', fontSize: 12 }}>Connect</button>
+            <button className="icon-btn" onClick={() => setErr('')} style={{ fontSize: 12 }}>✕</button>
+          </div>
+        </div>
+      )}
+      {err && err !== 'LLM_NOT_CONFIGURED' && <div className="banner error">{err}</div>}
 
       {items.length === 0 && (
         <div className="protein-estimate-row" style={{ marginBottom: 12 }}>
@@ -710,7 +749,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
             {busy ? <><span className="spinner" />Working…</> : '✨ Estimate & Save'}
           </button>
         ) : (
-          <button className="btn" onClick={save} disabled={busy || (!meal.trim() && items.length === 0)}>
+          <button className="btn" onClick={save} disabled={!meal.trim() && items.length === 0}>
             Save
           </button>
         )}

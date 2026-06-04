@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { BRAND } from './branding.js'
 import {
   InstallButton, InstallModal, InstallNudge, InstallSuccessToast,
@@ -569,6 +569,17 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
 function PreviewItem({ item, onChange, onRemove, onAdd }) {
   const [editing, setEditing] = useState(false)
 
+  // If user starts editing a loading item, it should stop loading
+  // so a late LLM response doesn't overwrite their manual input.
+  const handleStartEdit = () => {
+    if (!editing) {
+      if (item.loading) onChange('loading', false)
+      setEditing(true)
+    } else {
+      setEditing(false)
+    }
+  }
+
   return (
     <div className="preview-item">
       <div className="preview-item-header">
@@ -587,7 +598,7 @@ function PreviewItem({ item, onChange, onRemove, onAdd }) {
               {item.confidence}
             </span>
           )}
-          <button className="icon-btn" onClick={() => setEditing(!editing)} title={editing ? 'Done' : 'Edit name'} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>
+          <button className="icon-btn" onClick={handleStartEdit} title={editing ? 'Done' : 'Edit name'} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>
             {editing ? '✅' : '✏️'}
           </button>
           <button className="icon-btn" onClick={onAdd} title="Save this item" style={{ minHeight: 0, minWidth: 0, padding: 4 }}>➕</button>
@@ -635,6 +646,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
   const [previews, setPreviews] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const abortControllerRef = useRef(null)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
@@ -687,38 +699,57 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     }
     if (parts.length === 0) return
 
+    // Cancel any previous estimation
+    if (abortControllerRef.current) abortControllerRef.current.abort()
+    abortControllerRef.current = new AbortController()
+
     setBusy(true)
     setErr('')
 
+    const isLlmReady = llm.isReady()
     const newPreviews = parts.map(name => ({
       id: Math.random().toString(36).slice(2),
       name,
-      loading: true,
+      loading: isLlmReady,
       calories: 0,
       protein_g: 0,
       calcium_mg: 0,
       veg_servings: 0,
-      water_oz: 0,
+      water_oz: detectWaterOz(name),
       omega3: 'N',
       confidence: 'medium',
     }))
     setPreviews(newPreviews)
 
+    if (!isLlmReady) {
+      setErr('LLM_NOT_CONFIGURED')
+      setBusy(false)
+      return
+    }
+
     // Parallel estimates
-    await Promise.all(parts.map(async (part, i) => {
-      try {
-        const result = await llm.estimateNutrition(part, { recipes })
-        result.water_oz = detectWaterOz(part)
-        setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
-      } catch (e) {
-        setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, loading: false, err: e.message } : p))
-        if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
+    try {
+      await Promise.all(parts.map(async (part, i) => {
+        try {
+          const result = await llm.estimateNutrition(part, { recipes, signal: abortControllerRef.current.signal })
+          result.water_oz = detectWaterOz(part)
+          setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
+        } catch (e) {
+          if (e.name === 'AbortError') return
+          setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, loading: false, err: e.message } : p))
+          if (e.code === 'LLM_NOT_CONFIGURED') setErr('LLM_NOT_CONFIGURED')
+        }
+      }))
+    } finally {
+      // Only clear busy if this was the latest request
+      if (!abortControllerRef.current.signal.aborted) {
+        setBusy(false)
       }
-    }))
-    setBusy(false)
+    }
   }
 
   const save = async () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort()
     if (previews.length === 0) return
     const newEntries = previews.map(p => ({
       Date: date,
@@ -780,7 +811,19 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
         />
       </div>
 
-      {err && <div className="banner error">{err}</div>}
+      {err === 'LLM_NOT_CONFIGURED' && (
+        <div className="banner" style={{ background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', marginBottom: 12 }}>
+          <div style={{ fontSize: 13 }}>
+            <span style={{ marginRight: 8 }}>✨</span>
+            Connect OpenRouter to estimate nutrition automatically.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => openrouterAuth.startAuth()} style={{ padding: '4px 8px', fontSize: 12 }}>Connect</button>
+            <button className="icon-btn" onClick={() => setErr('')} style={{ fontSize: 12 }}>✕</button>
+          </div>
+        </div>
+      )}
+      {err && err !== 'LLM_NOT_CONFIGURED' && <div className="banner error">{err}</div>}
 
       {previews.length === 0 && (
         <button className="btn" onClick={estimate} disabled={busy || !desc.trim()}>
@@ -802,6 +845,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                onChange={(key, val) => updatePreview(p.id, key, val)}
                onRemove={() => removePreview(p.id)}
                onAdd={() => {
+                 if (abortControllerRef.current) abortControllerRef.current.abort()
                  onAdd([{
                    Date: date,
                    Meal: meal,
@@ -830,8 +874,11 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                 <div className="stat"><div className="v">{totals.omega3 ? 'Y' : 'N'}</div><div className="l">omega-3</div></div>
              </div>
              <div className="flex gap-8" style={{ marginTop: 12 }}>
-                <button className="btn" onClick={save}>Save all</button>
-                <button className="btn btn-secondary" onClick={() => setPreviews([])}>Discard all</button>
+                <button className="btn" onClick={save} disabled={previews.length === 0}>Save all</button>
+                <button className="btn btn-secondary" onClick={() => {
+                  if (abortControllerRef.current) abortControllerRef.current.abort()
+                  setPreviews([])
+                }}>Discard all</button>
              </div>
            </div>
         </div>
