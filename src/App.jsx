@@ -187,10 +187,10 @@ export default function App() {
       const curName = entryFileName('entries', curKey)
       const [curText, goalsText, recipesText, suggestionsText, weightText] = await Promise.all([
         storage.readFile(curName),
-        storage.readFile('goals.md'),
-        storage.readFile('recipes.md'),
+        storage.readFile('goals.toon'),
+        storage.readFile('recipes.toon'),
         storage.readFile(SUGGESTIONS_FILE),
-        storage.readFile('weight.md'),
+        storage.readFile('weight.toon'),
       ])
       setLogEntries(readEntries(curText, DAILY_LOG_HEADERS).rows)
       setGoals(readEntries(goalsText, GOALS_HEADERS).rows)
@@ -263,14 +263,14 @@ export default function App() {
   }
 
   const saveRecipes = async (newRecipes) => {
-    const original = await storage.readFile('recipes.md')
+    const original = await storage.readFile('recipes.toon')
     const next = writeEntries(original, RECIPE_HEADERS, newRecipes, { kind: 'recipes' })
-    await storage.writeFile('recipes.md', next)
+    await storage.writeFile('recipes.toon', next)
     setRecipes(newRecipes)
   }
 
   const saveWeight = async (entry) => {
-    const original = await storage.readFile('weight.md')
+    const original = await storage.readFile('weight.toon')
     const rows = readEntries(original, WEIGHT_HEADERS).rows
     // Upsert: replace existing entry for same date, otherwise append
     const idx = rows.findIndex(r => r.Date === entry.Date)
@@ -279,7 +279,7 @@ export default function App() {
       : [...rows, entry]
     newRows.sort((a, b) => a.Date.localeCompare(b.Date))
     const next = writeEntries(original, WEIGHT_HEADERS, newRows, { kind: 'weight' })
-    await storage.writeFile('weight.md', next)
+    await storage.writeFile('weight.toon', next)
     setWeightEntries(newRows)
   }
 
@@ -309,7 +309,7 @@ export default function App() {
     try {
       await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
     } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
+      console.warn(`Failed to persist ${SUGGESTIONS_FILE}:`, e)
     }
   }
 
@@ -1032,7 +1032,7 @@ function GoalsView({ goals }) {
   return (
     <div className="card">
       <h2>Daily Goals</h2>
-      <p className="muted">Edit <code>goals.md</code> in your folder to change targets.</p>
+      <p className="muted">Edit <code>goals.toon</code> in your folder to change targets.</p>
       <table className="simple">
         <thead><tr>{GOALS_HEADERS.map(h => <th key={h}>{h}</th>)}</tr></thead>
         <tbody>
@@ -1463,11 +1463,11 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
 
       <div className="card">
         <h2>Data files</h2>
-        <p className="muted">All your data lives as plain markdown in your chosen folder:</p>
+        <p className="muted">All your data lives as plain text (TOON format) in your chosen folder:</p>
         <ul className="muted">
-          <li><code>daily-log.md</code> — every meal you log</li>
-          <li><code>goals.md</code> — your daily nutrition targets</li>
-          <li><code>recipes.md</code> — homemade items storing whole-recipe totals plus a servings count</li>
+          <li><code>entries-YYYY-MM.toon</code> — every meal you log</li>
+          <li><code>goals.toon</code> — your daily nutrition targets</li>
+          <li><code>recipes.toon</code> — homemade items storing whole-recipe totals plus a servings count</li>
         </ul>
         <p className="muted">Edit them in any text editor; the app will pick up changes.</p>
       </div>

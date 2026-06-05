@@ -1,21 +1,51 @@
-// suggestions.csv — a per-folder food database for autocomplete.
+import { encode, decode } from '@toon-format/toon'
+
+// suggestions.toon — a per-folder food database for autocomplete.
 //
-// Schema (header row, comma-separated):
-//   name,protein_g,calories,calcium_mg,veg_servings,omega3
-//
-// - `name` is unique (case-insensitive). Upserts replace prior values.
-// - Numeric fields may be blank (simple-mode entries only carry protein).
-// - `omega3` is 'Y' / 'N' / '' (blank treated as 'N' when chosen).
-// - We keep this as a separate file from entries-YYYY-MM.md so the food
-//   database persists / syncs independently of the day-by-day log.
-//
-// The file is created lazily on first save (no scaffolding — see PR #36).
+// The file is created lazily on first save.
 // Sync is automatic: storage.writeFile() queues for OneDrive / Google Drive.
 
-export const SUGGESTIONS_FILE = 'suggestions.csv'
+export const SUGGESTIONS_FILE = 'suggestions.toon'
 export const SUGGESTION_COLUMNS = ['name', 'protein_g', 'calories', 'calcium_mg', 'veg_servings', 'omega3']
 
-// ---- CSV helpers (minimal but quote-aware) ----
+// ---- Public API ----
+
+export function parseSuggestions(text) {
+  if (!text || !text.trim()) return []
+
+  // Try TOON
+  try {
+    if (!text.includes(',')) { // CSV always has commas
+      return decode(text) || []
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback to CSV
+  try {
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
+    if (lines.length < 1) return []
+    const headers = parseLine(lines[0]).map(h => h.toLowerCase())
+    const out = []
+    for (let i = 1; i < lines.length; i++) {
+      const cells = parseLine(lines[i])
+      const obj = {}
+      headers.forEach((h, j) => { obj[h] = cells[j] ?? '' })
+      if (!obj.name) continue
+      out.push(obj)
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+export function serializeSuggestions(items) {
+  return encode(items)
+}
+
+// ---- Legacy CSV helpers for migration ----
 
 function parseLine(line) {
   const out = []
@@ -34,40 +64,6 @@ function parseLine(line) {
   }
   out.push(cur)
   return out.map(v => v.trim())
-}
-
-function quoteIfNeeded(v) {
-  const s = String(v ?? '')
-  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
-    return `"${s.replace(/"/g, '""')}"`
-  }
-  return s
-}
-
-// ---- Public API ----
-
-export function parseSuggestions(text) {
-  if (!text || !text.trim()) return []
-  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
-  if (lines.length < 1) return []
-  const headers = parseLine(lines[0]).map(h => h.toLowerCase())
-  const out = []
-  for (let i = 1; i < lines.length; i++) {
-    const cells = parseLine(lines[i])
-    const obj = {}
-    headers.forEach((h, j) => { obj[h] = cells[j] ?? '' })
-    if (!obj.name) continue
-    out.push(obj)
-  }
-  return out
-}
-
-export function serializeSuggestions(items) {
-  const header = SUGGESTION_COLUMNS.join(',')
-  const rows = items.map(it =>
-    SUGGESTION_COLUMNS.map(c => quoteIfNeeded(it[c] ?? '')).join(',')
-  )
-  return [header, ...rows].join('\n') + '\n'
 }
 
 // Returns a new list with `incoming` upserted (deduped by lowercased name).

@@ -18,12 +18,12 @@ export function monthKeyOf(dateLike) {
 }
 
 export function entryFileName(prefix, monthKey) {
-  return `${prefix}-${monthKey}.md`
+  return `${prefix}-${monthKey}.toon`
 }
 
 export async function listMonthFiles(storage, prefix) {
   const names = await storage.listFiles().catch(() => [])
-  const rx = new RegExp(`^${prefix}-(\\d{4}-\\d{2})\\.md$`)
+  const rx = new RegExp(`^${prefix}-(\\d{4}-\\d{2})\\.toon$`)
   return names
     .map(name => { const m = rx.exec(name); return m ? { name, monthKey: m[1] } : null })
     .filter(Boolean)
