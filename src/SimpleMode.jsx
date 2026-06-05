@@ -697,10 +697,9 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
                     />
                     <div className="flex gap-4">
                       <button className="icon-btn" onClick={() => {
-                        if (abortControllerRef.current) {
-                          abortControllerRef.current.abort()
-                          setBusy(false)
-                        }
+                        // Don't abort the batch — sibling estimates should
+                        // continue. The per-item loading guard in setItems
+                        // ignores late responses for items already removed.
                         onAdd([{ Date: date, Meal: it.name.trim(), 'Protein (g)': it.protein || '0' }])
                         onAfterSave?.(it.name.trim(), num(it.protein))
                         removeItem(it.id)

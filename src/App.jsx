@@ -842,10 +842,10 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                onChange={(key, val) => updatePreview(p.id, key, val)}
                onRemove={() => removePreview(p.id)}
                onAdd={() => {
-                 if (abortControllerRef.current) {
-                   abortControllerRef.current.abort()
-                   setBusy(false)
-                 }
+                 // Note: don't abort the in-flight batch. Saving one item
+                 // shouldn't cancel estimates for the others; the per-item
+                 // `loading` check in the setPreviews updater ensures the
+                 // removed item is ignored if its response lands late.
                  onAdd([{
                    Date: date,
                    Meal: meal,
