@@ -3,7 +3,6 @@ import { BRAND } from './branding.js'
 import { storage, getEngine } from './storage/storage.js'
 import { debounce } from './debounce.js'
 import { StatusBadge } from './StatusBadge.jsx'
-import { openSettings } from './SettingsButton.jsx'
 import { Footer } from './Footer.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
@@ -547,7 +546,8 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     if (parts.length === 0) return
 
     if (abortControllerRef.current) abortControllerRef.current.abort()
-    abortControllerRef.current = new AbortController()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     setBusy(true)
     setErr('')
@@ -570,7 +570,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     try {
       await Promise.all(parts.map(async (part, i) => {
         try {
-          const result = await llm.estimateNutrition(part, { recipes, signal: abortControllerRef.current.signal })
+          const result = await llm.estimateNutrition(part, { recipes, signal: controller.signal })
           setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
         } catch (e) {
           if (e.name === 'AbortError') return
@@ -579,14 +579,21 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
         }
       }))
     } finally {
-      if (!abortControllerRef.current.signal.aborted) {
+      // A newer estimate or a save/discard owns the busy flag if this run
+      // was aborted.
+      if (!controller.signal.aborted) {
         setBusy(false)
       }
     }
   }
 
   const save = async () => {
-    if (abortControllerRef.current) abortControllerRef.current.abort()
+    // Cancel any pending estimation. Since the aborted estimate's finally
+    // block won't reset busy, we do it here.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setBusy(false)
+    }
     const mealSnapshot = meal.trim()
     if (!mealSnapshot && items.length === 0) return
 
@@ -604,7 +611,8 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
   const estimateAndSave = async () => {
     if (!meal.trim()) return
     if (abortControllerRef.current) abortControllerRef.current.abort()
-    abortControllerRef.current = new AbortController()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     setBusy(true); setErr('')
     const parts = meal.split(',').map(p => p.trim()).filter(Boolean)
@@ -618,12 +626,12 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
     try {
       const results = await Promise.all(parts.map(async (part, i) => {
-        const result = await llm.estimateNutrition(part, { recipes, signal: abortControllerRef.current.signal })
+        const result = await llm.estimateNutrition(part, { recipes, signal: controller.signal })
         setItems(prev => prev.map(item => (item.id === newItems[i].id && item.loading) ? { ...item, protein: String(result.protein_g ?? '0'), loading: false } : item))
         return { Date: date, Meal: part, 'Protein (g)': String(result.protein_g ?? '0') }
       }))
 
-      if (abortControllerRef.current.signal.aborted) return
+      if (controller.signal.aborted) return
 
       await onAdd(results)
       const totalProtein = results.reduce((sum, e) => sum + num(e['Protein (g)']), 0)
@@ -634,7 +642,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
       setErr(e.message)
       if (e.code === 'LLM_NOT_CONFIGURED') setErr('LLM_NOT_CONFIGURED')
     } finally {
-      if (!abortControllerRef.current.signal.aborted) {
+      if (!controller.signal.aborted) {
         setBusy(false)
       }
     }
@@ -689,7 +697,10 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
                     />
                     <div className="flex gap-4">
                       <button className="icon-btn" onClick={() => {
-                        if (abortControllerRef.current) abortControllerRef.current.abort()
+                        if (abortControllerRef.current) {
+                          abortControllerRef.current.abort()
+                          setBusy(false)
+                        }
                         onAdd([{ Date: date, Meal: it.name.trim(), 'Protein (g)': it.protein || '0' }])
                         onAfterSave?.(it.name.trim(), num(it.protein))
                         removeItem(it.id)

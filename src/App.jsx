@@ -23,7 +23,6 @@ import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
-import { openSettings } from './SettingsButton.jsx'
 import { NutritionSettings } from './NutritionSettings.jsx'
 import { UpsellModal } from './UpsellModal.jsx'
 import { Footer } from './Footer.jsx'
@@ -703,7 +702,8 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
     // Cancel any previous estimation
     if (abortControllerRef.current) abortControllerRef.current.abort()
-    abortControllerRef.current = new AbortController()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     setBusy(true)
     setErr('')
@@ -733,7 +733,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     try {
       await Promise.all(parts.map(async (part, i) => {
         try {
-          const result = await llm.estimateNutrition(part, { recipes, signal: abortControllerRef.current.signal })
+          const result = await llm.estimateNutrition(part, { recipes, signal: controller.signal })
           result.water_oz = detectWaterOz(part)
           setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
         } catch (e) {
@@ -743,15 +743,21 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
         }
       }))
     } finally {
-      // Only clear busy if this was the latest request
-      if (!abortControllerRef.current.signal.aborted) {
+      // Only clear busy if this run wasn't superseded/aborted. A newer
+      // estimate (or save/discard) will manage the busy flag itself.
+      if (!controller.signal.aborted) {
         setBusy(false)
       }
     }
   }
 
   const save = async () => {
-    if (abortControllerRef.current) abortControllerRef.current.abort()
+    // Cancel any pending estimation. Since the aborted estimate's finally
+    // block won't reset busy, we do it here.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setBusy(false)
+    }
     if (previews.length === 0) return
     const newEntries = previews.map(p => ({
       Date: date,
@@ -836,7 +842,10 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                onChange={(key, val) => updatePreview(p.id, key, val)}
                onRemove={() => removePreview(p.id)}
                onAdd={() => {
-                 if (abortControllerRef.current) abortControllerRef.current.abort()
+                 if (abortControllerRef.current) {
+                   abortControllerRef.current.abort()
+                   setBusy(false)
+                 }
                  onAdd([{
                    Date: date,
                    Meal: meal,
@@ -867,7 +876,10 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
              <div className="flex gap-8" style={{ marginTop: 12 }}>
                 <button className="btn" onClick={save} disabled={previews.length === 0}>Save all</button>
                 <button className="btn btn-secondary" onClick={() => {
-                  if (abortControllerRef.current) abortControllerRef.current.abort()
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort()
+                    setBusy(false)
+                  }
                   setPreviews([])
                 }}>Discard all</button>
              </div>

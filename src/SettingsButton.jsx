@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { SettingsView } from './App.jsx'
+import { Modal } from './Modal.jsx'
 
 const OPEN_EVENT = 'mealjot:open-settings'
 
@@ -12,8 +13,6 @@ export function openSettings(scrollTo) {
 /** Settings button shown in the header of both Simple and Advanced modes.
  *  Optionally accepts `renderTrigger(onOpen)` to render a custom trigger
  *  (e.g. the StatusBadge) instead of the default ⚙ gear button. */
-import { Modal } from './Modal.jsx'
-
 export function SettingsButton({ mode, setMode, folderName, storageProvider, renderTrigger }) {
   const [open, setOpen] = useState(false)
   const [pendingScroll, setPendingScroll] = useState(null)
