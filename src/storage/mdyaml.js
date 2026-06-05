@@ -1,30 +1,57 @@
-// Minimal markdown + YAML-frontmatter helpers.
-//
-// File shape:
-//   ---
-//   schemaVersion: 1
-//   kind: entries
-//   mode: advanced
-//   period: 2026-05
-//   columns:
-//     - Date
-//     - Meal
-//     ...
-//   ---
-//   # Title (optional)
-//
-//   | Date | Meal | ... |
-//   |------|------|-----|
-//   | ...  | ...  | ... |
-//
-// We only support the YAML subset we emit: scalar `key: value` and
-// block-list values (`-` indented under a key).
+import { encode, decode } from '@toon-format/toon'
+import { parseTable, rowsToObjects } from './markdown.js'
 
-import { parseTable, replaceFirstTable, rowsToObjects, objectsToRows, serializeTable } from './markdown.js'
+export function readEntries(content, expectedHeaders) {
+  if (!content || !content.trim()) return { meta: {}, rows: [] }
 
-const FENCE = /^---\s*$/m
+  // Try TOON first
+  try {
+    // TOON usually doesn't start with ---
+    if (!content.trim().startsWith('---')) {
+      const data = decode(content)
+      if (data && (data.meta || data.rows)) {
+        return {
+          meta: data.meta || {},
+          rows: data.rows || []
+        }
+      }
+    }
+  } catch {
+    // not TOON
+  }
 
-export function parseFrontmatter(text) {
+  // Fallback to MD/YAML
+  const { meta, body } = parseFrontmatter(content)
+  const { headers, rows } = parseTable(body, expectedHeaders)
+  if (!headers.length) return { meta, rows: [] }
+  return { meta, rows: rowsToObjects(headers, rows) }
+}
+
+export function writeEntries(originalContent, headers, entries, metaOverrides = {}) {
+  // We always write in TOON format now.
+  let meta = {}
+  try {
+    const existing = readEntries(originalContent, headers)
+    meta = existing.meta || {}
+  } catch {
+    // ignore
+  }
+
+  meta = {
+    ...meta,
+    ...metaOverrides,
+    columns: headers
+  }
+
+  return encode({
+    meta,
+    rows: entries
+  })
+}
+
+// --- Restored MD/YAML helpers for migration ---
+
+function parseFrontmatter(text) {
   if (!text || !text.startsWith('---')) return { meta: {}, body: text || '' }
   const rest = text.slice(3)
   const endMatch = rest.match(/\n---\s*(\n|$)/)
@@ -33,12 +60,6 @@ export function parseFrontmatter(text) {
   const body = rest.slice(endMatch.index + endMatch[0].length)
   return { meta: parseYaml(yaml), body }
 }
-
-export function serializeFrontmatter(meta, body) {
-  return `---\n${stringifyYaml(meta)}---\n${body.startsWith('\n') ? body.slice(1) : body}`
-}
-
-// --- tiny YAML emitter/parser (only what we use) ---
 
 function parseYaml(text) {
   const meta = {}
@@ -55,7 +76,6 @@ function parseYaml(text) {
       meta[key] = coerce(val)
       i++
     } else {
-      // block list/map: scan indented `- item` lines
       const list = []
       i++
       while (i < lines.length && /^\s*-\s+/.test(lines[i])) {
@@ -68,61 +88,13 @@ function parseYaml(text) {
   return meta
 }
 
-function stringifyYaml(meta) {
-  const lines = []
-  for (const [k, v] of Object.entries(meta)) {
-    if (Array.isArray(v)) {
-      lines.push(`${k}:`)
-      for (const item of v) lines.push(`  - ${formatScalar(item)}`)
-    } else {
-      lines.push(`${k}: ${formatScalar(v)}`)
-    }
-  }
-  return lines.join('\n') + '\n'
-}
-
 function coerce(s) {
   if (s === 'true') return true
   if (s === 'false') return false
   if (s === 'null' || s === '~') return null
   if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s)
-  // strip wrapping quotes
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1)
   }
   return s
 }
-
-function formatScalar(v) {
-  if (v == null) return ''
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-  const s = String(v)
-  if (/[:#]/.test(s) || s.trim() !== s) return JSON.stringify(s)
-  return s
-}
-
-// --- combined helpers: read a md+yaml file's table rows as objects ---
-
-export function readEntries(content, expectedHeaders) {
-  const { meta, body } = parseFrontmatter(content)
-  const { headers, rows } = parseTable(body, expectedHeaders)
-  if (!headers.length) return { meta, rows: [] }
-  return { meta, rows: rowsToObjects(headers, rows) }
-}
-
-export function writeEntries(originalContent, headers, entries, metaOverrides = {}) {
-  const { meta: existingMeta, body: existingBody } = parseFrontmatter(originalContent || '')
-  const meta = {
-    schemaVersion: 1,
-    columns: headers,
-    ...existingMeta,
-    ...metaOverrides,
-  }
-  const rows = objectsToRows(headers, entries)
-  // If body already had a table, replace; otherwise append.
-  const newBody = existingBody && existingBody.includes('|')
-    ? replaceFirstTable(existingBody, headers, rows)
-    : (existingBody || '').trimEnd() + '\n\n' + serializeTable(headers, rows) + '\n'
-  return serializeFrontmatter(meta, newBody.startsWith('\n') ? newBody : '\n' + newBody)
-}
-

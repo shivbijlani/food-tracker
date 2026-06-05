@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@shivbijlani/folder-sync": "*",
+    "@toon-format/toon": "^2.3.0",
     "idb-keyval": "^6.2.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

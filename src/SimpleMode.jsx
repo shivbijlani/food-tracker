@@ -148,9 +148,9 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
       const curName = entryFileName('protein', curKey)
       const [logText, goalsText, sysText, recipesText, suggestionsText] = await Promise.all([
         storage.readFile(curName).catch(() => ''),
-        storage.readFile('goals.md').catch(() => ''),
-        storage.readFile('systems.md').catch(() => ''),
-        storage.readFile('recipes.md').catch(() => ''),
+        storage.readFile('goals.toon').catch(() => ''),
+        storage.readFile('systems.toon').catch(() => ''),
+        storage.readFile('recipes.toon').catch(() => ''),
         storage.readFile(SUGGESTIONS_FILE).catch(() => ''),
       ])
       const curRows = readEntries(logText, PROTEIN_LOG_HEADERS).rows
@@ -244,7 +244,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     try {
       await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
     } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
+      console.warn(`Failed to persist ${SUGGESTIONS_FILE}:`, e)
     }
   }
 
@@ -398,7 +398,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
               <MarkdownView text={systemsText} />
             ) : (
               <div className="muted">
-                No systems defined yet. Add your success and failure systems to <code>systems.md</code> in your folder.
+                No systems defined yet. Add your success and failure systems to <code>systems.toon</code> in your folder.
               </div>
             )}
           </div>
