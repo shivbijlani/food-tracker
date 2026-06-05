@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { BRAND } from './branding.js'
 import {
   InstallButton, InstallModal, InstallNudge, InstallSuccessToast,
@@ -23,7 +23,8 @@ import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
-import { openSettings } from './SettingsButton.jsx'
+import { NutritionSettings } from './NutritionSettings.jsx'
+import { UpsellModal } from './UpsellModal.jsx'
 import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
@@ -569,6 +570,17 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
 function PreviewItem({ item, onChange, onRemove, onAdd }) {
   const [editing, setEditing] = useState(false)
 
+  // If user starts editing a loading item, it should stop loading
+  // so a late LLM response doesn't overwrite their manual input.
+  const handleStartEdit = () => {
+    if (!editing) {
+      if (item.loading) onChange('loading', false)
+      setEditing(true)
+    } else {
+      setEditing(false)
+    }
+  }
+
   return (
     <div className="preview-item">
       <div className="preview-item-header">
@@ -587,7 +599,7 @@ function PreviewItem({ item, onChange, onRemove, onAdd }) {
               {item.confidence}
             </span>
           )}
-          <button className="icon-btn" onClick={() => setEditing(!editing)} title={editing ? 'Done' : 'Edit name'} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>
+          <button className="icon-btn" onClick={handleStartEdit} title={editing ? 'Done' : 'Edit name'} style={{ minHeight: 0, minWidth: 0, padding: 4 }}>
             {editing ? '✅' : '✏️'}
           </button>
           <button className="icon-btn" onClick={onAdd} title="Save this item" style={{ minHeight: 0, minWidth: 0, padding: 4 }}>➕</button>
@@ -635,6 +647,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
   const [previews, setPreviews] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const abortControllerRef = useRef(null)
 
   useEffect(() => { setDate(defaultDate) }, [defaultDate])
 
@@ -687,38 +700,64 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     }
     if (parts.length === 0) return
 
+    // Cancel any previous estimation
+    if (abortControllerRef.current) abortControllerRef.current.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     setBusy(true)
     setErr('')
 
+    const isLlmReady = llm.isReady()
     const newPreviews = parts.map(name => ({
       id: Math.random().toString(36).slice(2),
       name,
-      loading: true,
+      loading: isLlmReady,
       calories: 0,
       protein_g: 0,
       calcium_mg: 0,
       veg_servings: 0,
-      water_oz: 0,
+      water_oz: detectWaterOz(name),
       omega3: 'N',
       confidence: 'medium',
     }))
     setPreviews(newPreviews)
 
+    if (!isLlmReady) {
+      setErr('LLM_NOT_CONFIGURED')
+      setBusy(false)
+      return
+    }
+
     // Parallel estimates
-    await Promise.all(parts.map(async (part, i) => {
-      try {
-        const result = await llm.estimateNutrition(part, { recipes })
-        result.water_oz = detectWaterOz(part)
-        setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
-      } catch (e) {
-        setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, loading: false, err: e.message } : p))
-        if (e.code === 'LLM_NOT_CONFIGURED') setErr(e.message)
+    try {
+      await Promise.all(parts.map(async (part, i) => {
+        try {
+          const result = await llm.estimateNutrition(part, { recipes, signal: controller.signal })
+          result.water_oz = detectWaterOz(part)
+          setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, ...result, loading: false } : p))
+        } catch (e) {
+          if (e.name === 'AbortError') return
+          setPreviews(prev => prev.map(p => (p.id === newPreviews[i].id && p.loading) ? { ...p, loading: false, err: e.message } : p))
+          if (e.code === 'LLM_NOT_CONFIGURED') setErr('LLM_NOT_CONFIGURED')
+        }
+      }))
+    } finally {
+      // Only clear busy if this run wasn't superseded/aborted. A newer
+      // estimate (or save/discard) will manage the busy flag itself.
+      if (!controller.signal.aborted) {
+        setBusy(false)
       }
-    }))
-    setBusy(false)
+    }
   }
 
   const save = async () => {
+    // Cancel any pending estimation. Since the aborted estimate's finally
+    // block won't reset busy, we do it here.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setBusy(false)
+    }
     if (previews.length === 0) return
     const newEntries = previews.map(p => ({
       Date: date,
@@ -780,7 +819,8 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
         />
       </div>
 
-      {err && <div className="banner error">{err}</div>}
+      <UpsellModal isOpen={err === 'LLM_NOT_CONFIGURED'} onClose={() => setErr('')} />
+      {err && err !== 'LLM_NOT_CONFIGURED' && <div className="banner error">{err}</div>}
 
       {previews.length === 0 && (
         <button className="btn" onClick={estimate} disabled={busy || !desc.trim()}>
@@ -802,6 +842,10 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                onChange={(key, val) => updatePreview(p.id, key, val)}
                onRemove={() => removePreview(p.id)}
                onAdd={() => {
+                 // Note: don't abort the in-flight batch. Saving one item
+                 // shouldn't cancel estimates for the others; the per-item
+                 // `loading` check in the setPreviews updater ensures the
+                 // removed item is ignored if its response lands late.
                  onAdd([{
                    Date: date,
                    Meal: meal,
@@ -830,8 +874,14 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                 <div className="stat"><div className="v">{totals.omega3 ? 'Y' : 'N'}</div><div className="l">omega-3</div></div>
              </div>
              <div className="flex gap-8" style={{ marginTop: 12 }}>
-                <button className="btn" onClick={save}>Save all</button>
-                <button className="btn btn-secondary" onClick={() => setPreviews([])}>Discard all</button>
+                <button className="btn" onClick={save} disabled={previews.length === 0}>Save all</button>
+                <button className="btn btn-secondary" onClick={() => {
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort()
+                    setBusy(false)
+                  }
+                  setPreviews([])
+                }}>Discard all</button>
              </div>
            </div>
         </div>
@@ -1239,57 +1289,6 @@ function StorageAndSyncCard({ storageProvider, folderName }) {
 }
 
 export function SettingsView({ folderName, storageProvider, mode, setMode }) {
-  const [orConnected, setOrConnected] = useState(openrouterAuth.isConnected())
-  const [orModel, setOrModel] = useState(() => llm.getModel('openrouter'))
-  const [activeProvider, setActiveProvider] = useState(llm.getProvider())
-  const [saved, setSaved] = useState(false)
-  const [showManual, setShowManual] = useState(!openrouterAuth.isConnected())
-
-  // Manual key section state
-  const initManualProvider = () => {
-    const p = llm.getProvider()
-    return p === 'openrouter' ? 'github' : p
-  }
-  const [manualProvider, setManualProvider] = useState(initManualProvider)
-  const [apiKey, setApiKeyState] = useState(() => llm.getApiKey(manualProvider))
-  const [model, setModelState] = useState(() => llm.getModel(manualProvider))
-
-  const handleManualProviderChange = (p) => {
-    setManualProvider(p)
-    setApiKeyState(llm.getApiKey(p))
-    setModelState(llm.getModel(p))
-  }
-
-  const activateOpenRouter = () => {
-    llm.setModel(orModel || llm.PROVIDERS.openrouter.defaultModel, 'openrouter')
-    llm.setProvider('openrouter')
-    setActiveProvider('openrouter')
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
-
-  const handleDisconnectOpenRouter = () => {
-    openrouterAuth.clearKey()
-    setOrConnected(false)
-    if (activeProvider === 'openrouter') {
-      llm.setProvider('github')
-      setActiveProvider('github')
-    }
-    setShowManual(true)
-  }
-
-  const saveManualSettings = () => {
-    llm.setProvider(manualProvider)
-    llm.setApiKey(apiKey.trim(), manualProvider)
-    llm.setModel(model.trim(), manualProvider)
-    setActiveProvider(manualProvider)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
-
-  const manualProviderInfo = llm.PROVIDERS[manualProvider]
-  const isOrActive = activeProvider === 'openrouter'
-
   return (
     <>
       {setMode && (
@@ -1315,150 +1314,8 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
 
       <StorageAndSyncCard storageProvider={storageProvider} folderName={folderName} />
 
-      <div className="card" id="settings-llm">
-        <h2>Nutrition Estimation</h2>
-
-        {/* OpenRouter OAuth option */}
-        <div className={`llm-option-card${isOrActive ? ' llm-option-active' : ''}`}>
-          <div className="llm-option-header">
-            <span className="llm-option-icon">🔀</span>
-            <div style={{ flex: 1 }}>
-              <div className="llm-option-name">
-                OpenRouter
-                {!orConnected && <span className="llm-badge-recommended">Recommended</span>}
-                {isOrActive && <span className="llm-badge-active">✓ Active</span>}
-              </div>
-              <div className="llm-option-tagline">Sign in once — works automatically with free AI models</div>
-            </div>
-          </div>
-
-          {orConnected ? (
-            <div style={{ marginTop: '0.75rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {!isOrActive && (
-                  <button className="btn" onClick={activateOpenRouter}>Use OpenRouter</button>
-                )}
-                {isOrActive && saved && <span style={{ color: 'var(--good)' }}>Saved ✓</span>}
-                <button className="btn btn-secondary" onClick={handleDisconnectOpenRouter}>Disconnect</button>
-              </div>
-              <details style={{ marginTop: '0.75rem' }}>
-                <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                  Advanced: choose a specific model
-                </summary>
-                <div className="field" style={{ marginTop: '0.5rem' }}>
-                  <label>Model</label>
-                  <input
-                    value={orModel}
-                    onChange={e => setOrModel(e.target.value)}
-                    placeholder={llm.PROVIDERS.openrouter.defaultModel}
-                  />
-                  <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                    Leave blank for automatic (free). Or enter a specific model from <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">openrouter.ai/models</a>.
-                  </div>
-                </div>
-                {isOrActive && !saved && (
-                  <button className="btn btn-secondary" onClick={activateOpenRouter}>Save model</button>
-                )}
-              </details>
-            </div>
-          ) : (
-            <div style={{ marginTop: '0.75rem' }}>
-              <p className="muted" style={{ fontSize: '0.9rem' }}>
-                No manual key needed — connect once with your OpenRouter account.
-                You control your credit limits and can revoke access anytime from <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer">openrouter.ai</a>.
-              </p>
-              <button className="btn" onClick={() => openrouterAuth.startAuth()}>
-                Connect with OpenRouter →
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Manual API key toggle */}
-        <button
-          className="btn btn-secondary"
-          style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}
-          onClick={() => setShowManual(s => !s)}
-        >
-          {showManual ? '▾' : '▸'} Use a manual API key instead
-        </button>
-
-        {showManual && (
-          <div style={{ marginTop: '0.75rem' }}>
-            <div className="field">
-              <label>Provider</label>
-              <select value={manualProvider} onChange={e => handleManualProviderChange(e.target.value)}>
-                {Object.entries(llm.PROVIDERS).filter(([k]) => k !== 'openrouter').map(([key, p]) => (
-                  <option key={key} value={key}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>API key</label>
-              <input
-                type="password"
-                placeholder={manualProviderInfo.keyPlaceholder}
-                value={apiKey}
-                onChange={e => setApiKeyState(e.target.value)}
-                autoComplete="off"
-              />
-              {manualProvider === 'github' ? (
-                <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
-                  <strong>Free — no billing required.</strong> To get your token:
-                  <ol style={{margin: '0.4rem 0 0 1.2rem', padding: 0}}>
-                    <li>Go to <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a></li>
-                    <li>Give it any name (e.g. <em>mealjot</em>)</li>
-                    <li>Under <strong>Account permissions</strong> → <strong>Models</strong> → set to <strong>Read-only</strong></li>
-                    <li>Click <strong>Generate token</strong>, copy it, paste above</li>
-                  </ol>
-                  Rate limits: ~150 low-tier requests/day (more than enough for food logging).
-                </div>
-              ) : manualProvider === 'openai' ? (
-                <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
-                  <strong>Pay-as-you-go.</strong> ~$0.00015 per estimate with gpt-4o-mini.{' '}
-                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">Get your key →</a>
-                  <div style={{marginTop: '0.4rem'}}>
-                    <button className="btn btn-secondary" style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText()
-                          if (text.startsWith('sk-')) setApiKeyState(text.trim())
-                          else alert('Clipboard does not contain an OpenAI key (should start with sk-)')
-                        } catch { alert('Could not read clipboard. Paste the key manually.') }
-                      }}>📋 Paste from clipboard</button>
-                  </div>
-                </div>
-              ) : manualProvider === 'claude' ? (
-                <div className="muted" style={{fontSize:'0.85rem', marginTop: '0.5rem', lineHeight: '1.7'}}>
-                  <strong>Pay-as-you-go.</strong> ~$0.0001 per estimate with Claude Haiku.{' '}
-                  <a href="https://console.anthropic.com/settings/api-keys" target="_blank" rel="noreferrer">Get your key →</a>
-                  <div style={{marginTop: '0.4rem'}}>
-                    <button className="btn btn-secondary" style={{fontSize:'0.8rem', padding:'0.2rem 0.6rem'}}
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText()
-                          if (text.startsWith('sk-ant-')) setApiKeyState(text.trim())
-                          else alert('Clipboard does not contain an Anthropic key (should start with sk-ant-)')
-                        } catch { alert('Could not read clipboard. Paste the key manually.') }
-                      }}>📋 Paste from clipboard</button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div className="field">
-              <label>Model</label>
-              <input
-                value={model}
-                onChange={e => setModelState(e.target.value)}
-                placeholder={manualProviderInfo.defaultModel}
-              />
-            </div>
-            <div className="flex gap-8 items-center">
-              <button className="btn" onClick={saveManualSettings}>Save</button>
-              {saved && !isOrActive && <span style={{ color: 'var(--good)' }}>Saved ✓</span>}
-            </div>
-          </div>
-        )}
+      <div className="card">
+        <NutritionSettings />
       </div>
 
       <div className="card">

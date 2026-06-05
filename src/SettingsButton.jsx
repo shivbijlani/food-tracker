@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { SettingsView } from './App.jsx'
+import { Modal } from './Modal.jsx'
 
 const OPEN_EVENT = 'mealjot:open-settings'
 
@@ -51,24 +52,14 @@ export function SettingsButton({ mode, setMode, folderName, storageProvider, ren
           ⚙
         </button>
       )}
-      {open && (
-        <div className="settings-modal-backdrop" onClick={() => setOpen(false)}>
-          <div className="settings-modal" onClick={e => e.stopPropagation()}>
-            <div className="settings-modal-header">
-              <h2 style={{ margin: 0 }}>Settings</h2>
-              <button className="settings-panel-close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
-            </div>
-            <div className="settings-modal-body">
-              <SettingsView
-                folderName={folderName}
-                storageProvider={storageProvider}
-                mode={mode}
-                setMode={(m) => { setMode(m); setOpen(false) }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal isOpen={open} onClose={() => setOpen(false)} title="Settings">
+        <SettingsView
+          folderName={folderName}
+          storageProvider={storageProvider}
+          mode={mode}
+          setMode={(m) => { setMode(m); setOpen(false) }}
+        />
+      </Modal>
     </>
   )
 }
