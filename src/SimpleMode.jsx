@@ -19,6 +19,7 @@ import {
 } from './storage/suggestions.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import * as llm from './llm.js'
+import { UpsellModal } from './UpsellModal.jsx'
 import AutocompleteInput from './AutocompleteInput.jsx'
 
 const todayStr = () => {
@@ -669,6 +670,8 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
         />
       </div>
 
+      <UpsellModal isOpen={err === 'LLM_NOT_CONFIGURED'} onClose={() => setErr('')} />
+
       {items.length > 0 && (
         <div className="previews-container">
           <div className="flex justify-between items-center" style={{ marginBottom: 12 }}>
@@ -717,18 +720,6 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
         </div>
       )}
 
-      {err === 'LLM_NOT_CONFIGURED' && (
-        <div className="banner" style={{ background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', marginBottom: 12 }}>
-          <div style={{ fontSize: 13 }}>
-            <span style={{ marginRight: 8 }}>✨</span>
-            Connect OpenRouter to estimate protein automatically.
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-secondary" onClick={() => openrouterAuth.startAuth()} style={{ padding: '4px 8px', fontSize: 12 }}>Connect</button>
-            <button className="icon-btn" onClick={() => setErr('')} style={{ fontSize: 12 }}>✕</button>
-          </div>
-        </div>
-      )}
       {err && err !== 'LLM_NOT_CONFIGURED' && <div className="banner error">{err}</div>}
 
       {items.length === 0 && (
