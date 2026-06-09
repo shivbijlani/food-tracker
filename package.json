@@ -13,6 +13,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "vitest run",
     "copy:sw": "node scripts/copy-sw.mjs"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vitest": "^4.1.8"
   }
 }

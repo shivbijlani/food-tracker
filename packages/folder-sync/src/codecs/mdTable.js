@@ -52,25 +52,42 @@ function isDataRow(line) {
  * Parse markdown into { records, frame }.
  *   records: { [id]: { section, raw } }
  *   frame:   string with rows replaced by markers (stored as the FRAME_ID record)
+ *
+ * `opts.idFn(cells)` overrides the default id derivation (leading digits of
+ * column 0). Use this for files whose first column isn't a unique id — e.g.
+ * food-tracker entries files where column 0 is a Date repeated across many
+ * rows on the same day.
  */
-export function parse(content) {
+export function parse(content, opts = {}) {
   const text = content ?? ''
   const lines = text.split('\n')
   const records = {}
   const frameLines = []
   let currentSection = null
+  const idFn = opts.idFn || ((cells) => idOfFirstCell(cells[0] ?? ''))
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     if (line.startsWith('## ')) {
       currentSection = line.replace(/^##\s+/, '').trim()
       frameLines.push(line)
       continue
     }
     if (isDataRow(line)) {
-      const firstCell = line.trim().split('|').slice(1, -1)[0] ?? ''
-      const id = idOfFirstCell(firstCell)
-      // If two rows share an id (shouldn't happen), keep the first; still emit a
-      // marker so the second survives as literal text.
+      // Skip the column-header row — the line immediately followed by a
+      // separator. Without this, headers like "| Date | Meal | ... |" would be
+      // treated as data when the first cell isn't one of the known sentinels
+      // ("ID" / "#" / "").
+      const next = lines[i + 1]
+      if (next && isSeparatorRow(next)) {
+        frameLines.push(line)
+        continue
+      }
+      const cells = line.trim().split('|').slice(1, -1).map(c => c.trim())
+      const id = idFn(cells)
+      // If two rows resolve to the same id, keep the first; still emit a
+      // marker so the second survives as literal text. With a well-chosen
+      // idFn (one that captures per-row uniqueness) this branch shouldn't fire.
       if (!(id in records)) {
         records[id] = { section: currentSection, raw: line }
         frameLines.push(ROW_MARK(id))
@@ -144,3 +161,23 @@ export function serialize({ records, frame }) {
 }
 
 export const mdTableCodec = { parse, serialize, FRAME_ID }
+
+/**
+ * Factory for a codec instance with custom row-id derivation. Use this for
+ * files where the first column isn't a unique row identifier (e.g.
+ * food-tracker entries, where many rows share the same Date).
+ *
+ *   const codec = makeMdTableCodec({
+ *     idFn: (cells) => cells[cells.length - 1]   // last column holds the Id
+ *   })
+ *   reconcileRecord(provider, 'entries-2026-06.md', codec)
+ *
+ * `cells` is the array of trimmed cell values for the row, in column order.
+ */
+export function makeMdTableCodec({ idFn } = {}) {
+  return {
+    parse: (content) => parse(content, { idFn }),
+    serialize,
+    FRAME_ID,
+  }
+}

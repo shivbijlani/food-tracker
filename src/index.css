@@ -930,20 +930,46 @@ table.simple th {
     margin-bottom: 10px;
   }
 
+  /* Make the meal label readable + scannable on small screens
+     (was muted gray, blending with the date) */
   .entry-header {
     font-size: 13px;
+    gap: 8px;
+    align-items: center;
+  }
+  .entry-header > span:first-child strong {
+    color: var(--text);
+    font-size: 14px;
   }
 
+  /* Keep stats inline with wrap on mobile so each row stays compact.
+     Stacking vertically (the previous mobile rule) made every entry 5+
+     lines tall, which felt cramped on iPhone 13 mini. */
   .entry-stats {
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    row-gap: 4px;
   }
 
-  /* Day sections more compact */
+  /* Trim outer card padding so more entries fit above the fold. */
+  .card {
+    padding: 14px 14px;
+  }
+
+  /* Reserve room at the bottom for the install nudge so it doesn't
+     visually overlap the last entry in the list. */
+  .app {
+    padding-bottom: 180px;
+  }
+
+  /* Day sections more compact — keep header inline so date + totals
+     read as one band, not two stacked rows. */
   .day-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    flex-direction: row;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 12px;
   }
 
   .day-totals {
