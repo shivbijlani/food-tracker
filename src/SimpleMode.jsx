@@ -72,6 +72,17 @@ function currentWeekKey() {
   return sun.toISOString().slice(0, 10)
 }
 
+// Group a week's entries by day, preserving original (descending) order.
+function groupByDay(entries) {
+  const days = new Map()
+  for (const e of entries) {
+    if (!e.Date) continue
+    if (!days.has(e.Date)) days.set(e.Date, [])
+    days.get(e.Date).push(e)
+  }
+  return [...days.entries()].sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+}
+
 // Tiny markdown renderer — handles headers (# / ## / ###), bullets (- / *),
 // bold (**…**), and paragraphs. Sufficient for systems.md content.
 function renderInline(text) {
@@ -424,17 +435,16 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
                 <span className="muted">{dayCount} day{dayCount !== 1 ? 's' : ''} | avg {Math.round(avgProtein)}g/day</span>
                 <span className="collapse-arrow">{isExpanded ? '▲' : '▼'}</span>
               </div>
-              {isExpanded && weekEntries.map((e, i) => {
-                const globalIdx = entries.indexOf(e)
-                return (
-                  <SimpleEntryRow
-                    key={i}
-                    entry={e}
-                    onUpdate={(updated) => updateEntry(globalIdx, updated)}
-                    onDelete={() => deleteEntry(globalIdx)}
-                  />
-                )
-              })}
+              {isExpanded && groupByDay(weekEntries).map(([date, dayEntries]) => (
+                <SimpleDayRow
+                  key={date}
+                  date={date}
+                  dayEntries={dayEntries}
+                  allEntries={entries}
+                  onUpdate={updateEntry}
+                  onDelete={deleteEntry}
+                />
+              ))}
             </div>
           )
         })}
@@ -444,8 +454,63 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   )
 }
 
-function SimpleEntryRow({ entry, onUpdate, onDelete }) {
-  const [editing, setEditing] = useState(false)
+// A single day collapsed into one row. Tapping ✏️ expands the day to reveal
+// each logged item, which can then be individually edited or deleted.
+function SimpleDayRow({ date, dayEntries, allEntries, onUpdate, onDelete }) {
+  const [expanded, setExpanded] = useState(false)
+  const total = dayEntries.reduce((s, e) => s + num(e['Protein (g)']), 0)
+  const anyNeedsProtein = dayEntries.some(needsProtein)
+  const meals = dayEntries.map(e => e.Meal).filter(Boolean).join(', ')
+  const count = dayEntries.length
+
+  if (expanded) {
+    return (
+      <div style={{ borderBottom: '1px solid var(--border)', padding: '4px 0' }}>
+        <div className="entry-row" style={{ borderBottom: 'none' }}>
+          <span className="entry-row-date"><strong>{date}</strong></span>
+          <div className="entry-row-details">
+            <span className="entry-row-meal muted">{count} item{count !== 1 ? 's' : ''}</span>
+            <span className="entry-row-protein"><strong>{total}</strong>g</span>
+            <button className="icon-btn" title="Done editing day" onClick={() => setExpanded(false)}>▲</button>
+          </div>
+        </div>
+        <div style={{ paddingLeft: 8 }}>
+          {dayEntries.map((e, i) => {
+            const globalIdx = allEntries.indexOf(e)
+            return (
+              <SimpleEntryRow
+                key={i}
+                entry={e}
+                startEditing
+                onUpdate={(updated) => onUpdate(globalIdx, updated)}
+                onDelete={() => onDelete(globalIdx)}
+              />
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="entry-row">
+      <span className="entry-row-date">{date}</span>
+      <div className="entry-row-details">
+        <span className="entry-row-meal">
+          {anyNeedsProtein && (
+            <span title="Some items need protein — tap ✏️ to fill them in" style={{ marginRight: 4, cursor: 'help' }}>⚠️</span>
+          )}
+          <span title={meals}>{count} item{count !== 1 ? 's' : ''}{meals ? `: ${meals}` : ''}</span>
+        </span>
+        <span className="entry-row-protein"><strong>{total}</strong>g</span>
+        <button className="icon-btn" title="Edit day" onClick={() => setExpanded(true)}>✏️</button>
+      </div>
+    </div>
+  )
+}
+
+function SimpleEntryRow({ entry, onUpdate, onDelete, startEditing = false }) {
+  const [editing, setEditing] = useState(startEditing)
   const [draft, setDraft] = useState(entry)
 
   if (editing) {
