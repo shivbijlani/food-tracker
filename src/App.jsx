@@ -49,6 +49,16 @@ function num(v) {
   return isFinite(n) ? n : 0
 }
 
+// A "quick add" entry is logged with blank nutrition cells so it can be
+// filled in later. Estimated/edited entries always carry numeric values
+// (defaulting to 0), so blank cells reliably flag a pending entry. The flag
+// self-clears once the user fills in any nutrition value.
+function needsNutrition(e) {
+  const blank = v => v === '' || v === undefined || v === null
+  return blank(e.Calories) && blank(e['Protein (g)']) &&
+    blank(e['Calcium (mg)']) && blank(e['Veg Servings'])
+}
+
 // ---------------------------------------------------------------------------
 // Water keyword matching — edit this list to control what counts as water.
 // Matching is case-insensitive substring. The LLM is NOT used for water.
@@ -810,6 +820,33 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
     setDesc(''); setPreviews([]); setErr('')
   }
 
+  const quickAdd = async () => {
+    if (!desc.trim()) return
+    let parts = desc.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.length === 1 && parts[0].includes(' and ')) {
+      parts = parts[0].split(/\s+and\s+/i).map(p => p.trim()).filter(Boolean)
+    }
+    if (parts.length === 0) return
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setBusy(false)
+    }
+    const newEntries = parts.map(name => ({
+      Date: date,
+      Meal: meal,
+      'Food Description': name,
+      Calories: '',
+      'Protein (g)': '',
+      'Calcium (mg)': '',
+      'Veg Servings': '',
+      'Water (oz)': '',
+      'Omega-3': 'N',
+      Notes: '',
+    }))
+    await onAdd(newEntries)
+    setDesc(''); setPreviews([]); setErr('')
+  }
+
   const updatePreview = (id, key, val) => {
     setPreviews(prev => prev.map(p => p.id === id ? { ...p, [key]: val, loading: false, err: undefined } : p))
   }
@@ -858,9 +895,14 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
       {err && err !== 'LLM_NOT_CONFIGURED' && <div className="banner error">{err}</div>}
 
       {previews.length === 0 && (
-        <button className="btn" onClick={estimate} disabled={busy || !desc.trim()}>
-          {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate nutrition'}
-        </button>
+        <div className="flex gap-8">
+          <button className="btn" onClick={estimate} disabled={busy || !desc.trim()}>
+            {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate nutrition'}
+          </button>
+          <button className="btn btn-secondary" onClick={quickAdd} disabled={!desc.trim()} title="Log now with no nutrition values — fill them in later">
+            ⚡ Quick add
+          </button>
+        </div>
       )}
 
       {previews.length > 0 && (
@@ -997,7 +1039,12 @@ function EntryRow({ entry, onDelete, onUpdate }) {
           {onDelete && <button className="icon-btn" title="Delete" onClick={onDelete} style={{ marginLeft: 4 }}>🗑</button>}
         </span>
       </div>
-      <div className="entry-desc">{entry['Food Description']}</div>
+      <div className="entry-desc">
+        {needsNutrition(entry) && (
+          <span title="Nutrition not added yet — tap ✏️ to fill it in" style={{ marginRight: 6, cursor: 'help' }}>⚠️</span>
+        )}
+        {entry['Food Description']}
+      </div>
       <div className="entry-stats">
         <span><strong>{entry.Calories || 0}</strong> kcal</span>
         <span><strong>{entry['Protein (g)'] || 0}</strong>g protein</span>

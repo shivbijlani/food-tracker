@@ -477,13 +477,26 @@ function SimpleEntryRow({ entry, onUpdate, onDelete }) {
     <div className="entry-row">
       <span className="entry-row-date">{entry.Date}</span>
       <div className="entry-row-details">
-        <span className="entry-row-meal">{entry.Meal}</span>
+        <span className="entry-row-meal">
+          {needsProtein(entry) && (
+            <span title="Protein not added yet — tap ✏️ to fill it in" style={{ marginRight: 4, cursor: 'help' }}>⚠️</span>
+          )}
+          {entry.Meal}
+        </span>
         <span className="entry-row-protein"><strong>{entry['Protein (g)']}</strong>g</span>
         {onUpdate && <button className="icon-btn" title="Edit" onClick={() => setEditing(true)}>✏️</button>}
         <button className="icon-btn" title="Delete" onClick={onDelete}>🗑</button>
       </div>
     </div>
   )
+}
+
+// Quick-added entries log a blank protein value so they show a warning until
+// filled in. A blank cell (not "0") distinguishes them from real zero-protein
+// items, and the flag self-clears once a value is entered.
+function needsProtein(entry) {
+  const v = entry['Protein (g)']
+  return v === '' || v === undefined || v === null
 }
 
 function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggestionsCsv = [], recipes = [] }) {
@@ -648,6 +661,23 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     }
   }
 
+  const quickAdd = async () => {
+    if (!meal.trim()) return
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setBusy(false)
+    }
+    let parts = meal.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.length === 1 && parts[0].includes(' and ')) {
+      parts = parts[0].split(/\s+and\s+/i).map(p => p.trim()).filter(Boolean)
+    }
+    if (parts.length === 0) return
+    const mealSnapshot = meal.trim()
+    await onAdd(parts.map(name => ({ Date: date, Meal: name, 'Protein (g)': '' })))
+    setMeal(''); setItems([]); setErr('')
+    onAfterSave?.(mealSnapshot, 0)
+  }
+
   const updateItem = (id, key, val) => {
     setItems(prev => prev.map(it => it.id === id ? { ...it, [key]: val, loading: false, err: undefined } : it))
   }
@@ -740,6 +770,14 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
             disabled={busy || !meal.trim()}
           >
             {busy ? <><span className="spinner" />Estimating…</> : '✨ Estimate'}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={quickAdd}
+            disabled={!meal.trim()}
+            title="Log now with no protein value — fill it in later"
+          >
+            ⚡ Quick add
           </button>
         </div>
       )}
