@@ -67,27 +67,62 @@ export const WATER_KEYWORDS = [
   'tisane',
 ]
 
+const WATER_UNIT_RE = '(?:fl\\.?\\s*oz|ounces?|oz|ml|milliliters?|litres?|liters?|l\\b|cups?|glasses?|bottles?|cans?)'
+
+function ozFromQtyUnit(qtyStr, unitRaw) {
+  const qty = parseFloat(qtyStr)
+  const unit = unitRaw.replace(/\s+/g, '').toLowerCase()
+  if (/^(fl\.?oz|ounces?|oz)/.test(unit)) return Math.round(qty / 2) * 2
+  if (/^ml|^milliliter/.test(unit)) return Math.round(qty / 29.5 / 2) * 2
+  if (unit === 'l' || /^lit(re|er)s?$/.test(unit)) return Math.round(qty * 33.8 / 2) * 2
+  if (/^cups?|^glasses?/.test(unit)) return qty * 8
+  if (/^bottles?/.test(unit)) return qty * 16
+  if (/^cans?/.test(unit)) return qty * 12
+  return 0
+}
+
+function waterQtyOzList(str) {
+  const re = new RegExp('(\\d+(?:\\.\\d+)?)\\s*(' + WATER_UNIT_RE + ')', 'gi')
+  const out = []
+  let m
+  while ((m = re.exec(str)) !== null) out.push(ozFromQtyUnit(m[1], m[2]))
+  return out
+}
+
+// Detect total water (oz) in a description. Each water keyword mention is
+// matched to the quantity nearest to it (preferring the one immediately
+// before, then after) so non-water amounts like "1/2 cup milk" aren't counted,
+// and multiple mentions (e.g. "20 oz water, 20 oz water") are summed.
 export function detectWaterOz(description) {
   if (!description) return 0
   const lower = description.toLowerCase()
-  if (!WATER_KEYWORDS.some(kw => lower.includes(kw))) return 0
 
-  const unitMatch = lower.match(/(\d+(?:\.\d+)?)\s*(fl\.?\s*oz|ounces?|oz|ml|milliliters?|litres?|liters?|l\b|cups?|glasses?|bottles?|cans?)/)
-  if (unitMatch) {
-    const qty = parseFloat(unitMatch[1])
-    const unit = unitMatch[2].replace(/\s+/g, '')
-    if (/^(fl\.?oz|ounces?|oz)/.test(unit)) return Math.round(qty / 2) * 2
-    if (/^ml|^milliliter/.test(unit)) return Math.round(qty / 29.5 / 2) * 2
-    if (/^l(itr|iter)?$/.test(unit)) return Math.round(qty * 33.8 / 2) * 2
-    if (/^cups?|^glasses?/.test(unit)) return qty * 8
-    if (/^bottles?/.test(unit)) return qty * 16
-    if (/^cans?/.test(unit)) return qty * 12
+  // Longest keywords first so "sparkling water" isn't also matched as "water".
+  const kw = [...WATER_KEYWORDS]
+    .sort((a, b) => b.length - a.length)
+    .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const kwRe = new RegExp('(?:' + kw + ')', 'g')
+
+  let total = 0
+  let found = false
+  let m
+  while ((m = kwRe.exec(lower)) !== null) {
+    found = true
+    const idx = m.index
+    const before = lower.slice(Math.max(0, idx - 24), idx)
+    const beforeList = waterQtyOzList(before)
+    let oz = beforeList.length ? beforeList[beforeList.length - 1] : null
+    if (oz == null) {
+      const after = lower.slice(idx + m[0].length, idx + m[0].length + 24)
+      const afterList = waterQtyOzList(after)
+      oz = afterList.length ? afterList[0] : null
+    }
+    total += (oz == null ? 8 : oz)
   }
 
-  const numMatch = lower.match(/^(\d+(?:\.\d+)?)\s+/)
-  if (numMatch) return parseFloat(numMatch[1]) * 8
-
-  return 8
+  if (!found) return 0
+  return Math.round(total * 2) / 2
 }
 
 // Parse a goal target string like "1400-1600 kcal" or "90-120 g" → midpoint number
@@ -854,6 +889,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                    'Protein (g)': p.protein_g,
                    'Calcium (mg)': p.calcium_mg,
                    'Veg Servings': p.veg_servings,
+                   'Water (oz)': p.water_oz,
                    'Omega-3': p.omega3,
                    Notes: '',
                  }])
@@ -871,6 +907,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
                 <div className="stat"><div className="v">{totals.protein_g}</div><div className="l">pro g</div></div>
                 <div className="stat"><div className="v">{totals.calcium_mg}</div><div className="l">Ca mg</div></div>
                 <div className="stat"><div className="v">{totals.veg_servings}</div><div className="l">veg srv</div></div>
+                <div className="stat"><div className="v">{totals.water_oz}</div><div className="l">water</div></div>
                 <div className="stat"><div className="v">{totals.omega3 ? 'Y' : 'N'}</div><div className="l">omega-3</div></div>
              </div>
              <div className="flex gap-8" style={{ marginTop: 12 }}>
@@ -933,6 +970,7 @@ function EntryRow({ entry, onDelete, onUpdate }) {
           <label>protein <input type="number" value={draft['Protein (g)'] || 0} onChange={e => set('Protein (g)', e.target.value)} style={{ width: 60 }} /></label>
           <label>Ca <input type="number" value={draft['Calcium (mg)'] || 0} onChange={e => set('Calcium (mg)', e.target.value)} style={{ width: 60 }} /></label>
           <label>veg <input type="number" step="0.5" value={draft['Veg Servings'] || 0} onChange={e => set('Veg Servings', e.target.value)} style={{ width: 50 }} /></label>
+          <label>water oz <input type="number" step="2" value={draft['Water (oz)'] || 0} onChange={e => set('Water (oz)', e.target.value)} style={{ width: 60 }} /></label>
           <label>ω-3 <input type="checkbox" checked={draft['Omega-3'] === 'Y'} onChange={e => set('Omega-3', e.target.checked ? 'Y' : '')} /></label>
         </div>
         <input
@@ -965,6 +1003,7 @@ function EntryRow({ entry, onDelete, onUpdate }) {
         <span><strong>{entry['Protein (g)'] || 0}</strong>g protein</span>
         <span><strong>{entry['Calcium (mg)'] || 0}</strong>mg Ca</span>
         <span><strong>{entry['Veg Servings'] || 0}</strong> veg</span>
+        {num(entry['Water (oz)']) > 0 && <span><strong>{entry['Water (oz)']}</strong>oz water</span>}
         {entry['Omega-3'] === 'Y' && <span style={{ color: 'var(--good)' }}>ω-3</span>}
       </div>
     </div>
@@ -994,13 +1033,14 @@ function LogView({ entries, onDelete, onUpdate }) {
           pro: a.pro + num(e['Protein (g)']),
           ca: a.ca + num(e['Calcium (mg)']),
           veg: a.veg + num(e['Veg Servings']),
-        }), { cal: 0, pro: 0, ca: 0, veg: 0 })
+          water: Math.round((a.water + num(e['Water (oz)'])) * 2) / 2,
+        }), { cal: 0, pro: 0, ca: 0, veg: 0, water: 0 })
         return (
           <div key={date} className="day-section">
             <div className="day-header">
               <h3>{date}</h3>
               <span className="day-totals">
-                {Math.round(totals.cal)} kcal · {Math.round(totals.pro)}g pro · {Math.round(totals.ca)}mg Ca · {totals.veg} veg
+                {Math.round(totals.cal)} kcal · {Math.round(totals.pro)}g pro · {Math.round(totals.ca)}mg Ca · {totals.veg} veg{totals.water > 0 ? ` · ${Math.round(totals.water)}oz water` : ''}
               </span>
             </div>
             {dayEntries.map((e, i) => {
