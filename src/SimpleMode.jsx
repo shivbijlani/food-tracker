@@ -469,7 +469,6 @@ function SimpleDayRow({ date, dayEntries, allEntries, onUpdate, onDelete }) {
         <div className="entry-row" style={{ borderBottom: 'none' }}>
           <span className="entry-row-date"><strong>{date}</strong></span>
           <div className="entry-row-details">
-            <span className="entry-row-meal muted">{count} item{count !== 1 ? 's' : ''}</span>
             <span className="entry-row-protein"><strong>{total}</strong>g</span>
             <button className="icon-btn" title="Done editing day" onClick={() => setExpanded(false)}>▲</button>
           </div>
@@ -500,7 +499,7 @@ function SimpleDayRow({ date, dayEntries, allEntries, onUpdate, onDelete }) {
           {anyNeedsProtein && (
             <span title="Some items need protein — tap ✏️ to fill them in" style={{ marginRight: 4, cursor: 'help' }}>⚠️</span>
           )}
-          <span title={meals}>{count} item{count !== 1 ? 's' : ''}{meals ? `: ${meals}` : ''}</span>
+          <span title={meals}>{meals || `${count} item${count !== 1 ? 's' : ''}`}</span>
         </span>
         <span className="entry-row-protein"><strong>{total}</strong>g</span>
         <button className="icon-btn" title="Edit day" onClick={() => setExpanded(true)}>✏️</button>
