@@ -315,6 +315,13 @@ export default function App() {
     setRecipes(newRecipes)
   }
 
+  const saveGoals = async (newGoals) => {
+    const original = await storage.readFile('goals.md')
+    const next = writeEntries(original, GOALS_HEADERS, newGoals, { kind: 'goals' })
+    await storage.writeFile('goals.md', next)
+    setGoals(newGoals)
+  }
+
   const saveWeight = async (entry) => {
     const original = await storage.readFile('weight.md')
     const rows = readEntries(original, WEIGHT_HEADERS).rows
@@ -442,7 +449,7 @@ export default function App() {
       {tab === 'today' && <TodayView entries={logEntries} goals={goals} onAdd={addEntriesWithCoaching} onUpdate={updateEntry} onDelete={deleteEntry} recipes={recipes} suggestions={suggestions} weightEntries={weightEntries} onLogWeight={saveWeight} />}
       {tab === 'log' && <LogView entries={logEntries} onDelete={deleteEntry} onUpdate={updateEntry} />}
       {tab === 'recipes' && <RecipesView recipes={recipes} onSave={saveRecipes} />}
-      {tab === 'goals' && <GoalsView goals={goals} />}
+      {tab === 'goals' && <GoalsView goals={goals} onSave={saveGoals} />}
       <InstallNudge onOpen={() => setInstallOpen(true)} appName={BRAND.appName} />
       <InstallSuccessToast appName={BRAND.appName} />
       {installOpen && <InstallModal onClose={() => setInstallOpen(false)} appName={BRAND.appName} />}
@@ -1165,19 +1172,65 @@ function RecipesView({ recipes, onSave }) {
   )
 }
 
-function GoalsView({ goals }) {
+function GoalsView({ goals, onSave }) {
+  const blankGoal = () => GOALS_HEADERS.reduce((o, h) => ({ ...o, [h]: '' }), {})
+  const [draft, setDraft] = useState(goals)
+  const [saving, setSaving] = useState(false)
+
+  // Re-sync the editable draft whenever the saved goals change (e.g. after load).
+  useEffect(() => { setDraft(goals) }, [goals])
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(goals)
+
+  const updateCell = (i, header, value) => {
+    setDraft(draft.map((g, j) => (j === i ? { ...g, [header]: value } : g)))
+  }
+
+  const removeRow = (i) => setDraft(draft.filter((_, j) => j !== i))
+
+  const addRow = () => setDraft([...draft, blankGoal()])
+
+  const save = async () => {
+    if (!onSave) return
+    setSaving(true)
+    try {
+      // Drop rows with no nutrient name so empty additions don't persist.
+      await onSave(draft.filter(g => (g.Nutrient || '').trim()))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const reset = () => setDraft(goals)
+
   return (
     <div className="card">
       <h2>Daily Goals</h2>
-      <p className="muted">Edit <code>goals.md</code> in your folder to change targets.</p>
+      <p className="muted">Edit your targets below and click <strong>Save goals</strong>. Changes are written to <code>goals.md</code> in your folder.</p>
       <table className="simple">
-        <thead><tr>{GOALS_HEADERS.map(h => <th key={h}>{h}</th>)}</tr></thead>
+        <thead><tr>{GOALS_HEADERS.map(h => <th key={h}>{h}</th>)}<th></th></tr></thead>
         <tbody>
-          {goals.map((g, i) => (
-            <tr key={i}>{GOALS_HEADERS.map(h => <td key={h}>{g[h]}</td>)}</tr>
+          {draft.map((g, i) => (
+            <tr key={i}>
+              {GOALS_HEADERS.map(h => (
+                <td key={h}>
+                  <input
+                    value={g[h] ?? ''}
+                    placeholder={h}
+                    onChange={e => updateCell(i, h, e.target.value)}
+                  />
+                </td>
+              ))}
+              <td><button className="icon-btn" onClick={() => removeRow(i)} title="Remove">🗑</button></td>
+            </tr>
           ))}
         </tbody>
       </table>
+      <div className="row" style={{ marginTop: '0.75rem', gap: '0.5rem' }}>
+        <button className="btn btn-secondary" onClick={addRow}>+ Add nutrient</button>
+        <button className="btn" onClick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save goals'}</button>
+        {dirty && <button className="btn btn-secondary" onClick={reset} disabled={saving}>Cancel</button>}
+      </div>
     </div>
   )
 }
