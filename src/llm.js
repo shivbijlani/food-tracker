@@ -304,7 +304,64 @@ Write 2–3 plain-text sentences (60 words max) that:
 2. State the most important remaining gap as what's still left to eat for the rest of the day, in specific numbers.
 3. Name 1–2 foods from their history that would efficiently close the gap.
 
+Only meals listed under "Today's meals so far" count toward today. The "Today's totals" line is the authoritative amount eaten today — use that exact figure and never recompute it or add anything from "Earlier days" to it. Meals under "Earlier days" were eaten on previous days; use them only to spot habits, and never describe them or their calories as part of what was eaten today.
+
 Plain text only — no markdown, no bullet points, no headings. Never invent numbers or foods not in the provided data.`
+
+/**
+ * Build the coaching user-turn prompt. Pure and exported so the
+ * today-vs-earlier-days boundary can be unit-tested without a network call.
+ *
+ * Only meals logged today count toward "today". Earlier days are passed as
+ * background context and fenced off explicitly, so the model can't fold a
+ * prior day's dinner into today's running total. (mealjot bug: the coach
+ * reported 905 kcal — today's 665 plus the previous evening's dinner — while
+ * the tracker correctly showed 665.)
+ *
+ * @param {{ recentEntriesText?: string, systemsText?: string, proteinGoal?: number,
+ *           lastMealLine?: string, todayEntriesText?: string, todayTotals?: object|null,
+ *           goalsText?: string, frequentFoodsText?: string, currentTime?: string }} ctx
+ * @returns {string}
+ */
+export function buildCoachingUserContent(ctx = {}) {
+  const {
+    recentEntriesText = '',
+    systemsText = '',
+    proteinGoal,
+    lastMealLine = '',
+    todayEntriesText = '',
+    todayTotals = null,
+    goalsText = '',
+    frequentFoodsText = '',
+    currentTime = '',
+  } = ctx
+
+  // Cap context sizes to keep latency + token costs predictable.
+  const trimmedEntries = String(recentEntriesText).slice(-2000)
+  const trimmedSystems = String(systemsText).slice(0, 1000)
+
+  const todaySection = todayEntriesText
+    ? `Today's meals so far:\n${todayEntriesText}`
+    : 'No meals logged today yet.'
+
+  const totalsLine = todayTotals
+    ? `Today's totals (authoritative — everything eaten today; do not recompute or add to this): ${todayTotals.calories}kcal, ${todayTotals.protein}g protein, ${todayTotals.calcium}mg calcium, ${todayTotals.veg} veg servings, omega-3: ${todayTotals.omega3 ? 'yes' : 'no'}`
+    : ''
+
+  return [
+    COACH_GUIDANCE,
+    '',
+    goalsText ? `Daily goals: ${goalsText}` : (proteinGoal ? `Daily protein goal: ${proteinGoal}g` : ''),
+    currentTime ? `Current time: ${currentTime}. Goals are whole-day targets — judge progress relative to how much of the day is left, not as if the day were over.` : '',
+    '',
+    todaySection,
+    totalsLine,
+    lastMealLine ? `\nJust logged: ${lastMealLine}.` : '',
+    frequentFoodsText ? `\nFoods this user has tracked before (suggest from these):\n${frequentFoodsText}` : '',
+    trimmedSystems ? `\nPersonal systems:\n${trimmedSystems}` : '',
+    trimmedEntries ? `\nEarlier days (eaten on PRIOR days — for spotting habits only; NOT part of today's intake, never add to today's totals):\n${trimmedEntries}` : '',
+  ].filter(Boolean).join('\n')
+}
 
 /**
  * Get a short coaching message from the configured LLM.
@@ -322,44 +379,8 @@ export async function getCoaching(ctx = {}) {
   const apiKey = getApiKey(provider)
   if (!apiKey) return null
 
-  const {
-    recentEntriesText = '',
-    systemsText = '',
-    proteinGoal,
-    lastMealLine = '',
-    todayEntriesText = '',
-    todayTotals = null,
-    goalsText = '',
-    frequentFoodsText = '',
-    currentTime = '',
-    signal,
-  } = ctx
-
-  // Cap context sizes to keep latency + token costs predictable.
-  const trimmedEntries = String(recentEntriesText).slice(-2000)
-  const trimmedSystems = String(systemsText).slice(0, 1000)
-
-  const todaySection = todayEntriesText
-    ? `Today's meals so far:\n${todayEntriesText}`
-    : 'No meals logged today yet.'
-
-  const totalsLine = todayTotals
-    ? `Today's totals: ${todayTotals.calories}kcal, ${todayTotals.protein}g protein, ${todayTotals.calcium}mg calcium, ${todayTotals.veg} veg servings, omega-3: ${todayTotals.omega3 ? 'yes' : 'no'}`
-    : ''
-
-  const userContent = [
-    COACH_GUIDANCE,
-    '',
-    goalsText ? `Daily goals: ${goalsText}` : (proteinGoal ? `Daily protein goal: ${proteinGoal}g` : ''),
-    currentTime ? `Current time: ${currentTime}. Goals are whole-day targets — judge progress relative to how much of the day is left, not as if the day were over.` : '',
-    '',
-    todaySection,
-    totalsLine,
-    lastMealLine ? `\nJust logged: ${lastMealLine}.` : '',
-    frequentFoodsText ? `\nFoods this user has tracked before (suggest from these):\n${frequentFoodsText}` : '',
-    trimmedSystems ? `\nPersonal systems:\n${trimmedSystems}` : '',
-    trimmedEntries ? `\nRecent history (last 30 days, for pattern context):\n${trimmedEntries}` : '',
-  ].filter(Boolean).join('\n')
+  const { signal } = ctx
+  const userContent = buildCoachingUserContent(ctx)
 
   const model = getModel(provider)
 
