@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   sync:
+    # Only a fork needs to sync from upstream. In the source repo
+    # upstream == origin, so this job is a no-op that just burns a run.
+    if: github.repository != 'shivbijlani/food-tracker'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
