@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
+import * as debugLog from './llmDebugLog.js'
 
 export function NutritionSettings({ showOnlyOpenRouter = false }) {
   const [orConnected, setOrConnected] = useState(openrouterAuth.isConnected())
@@ -203,6 +204,90 @@ export function NutritionSettings({ showOnlyOpenRouter = false }) {
           )}
         </>
       )}
+
+      {!showOnlyOpenRouter && <LlmDiagnostics />}
     </div>
+  )
+}
+
+/**
+ * Diagnostic LLM logging (task #273). Off by default. When on, each estimate /
+ * coaching call is appended to an on-device ring buffer the user can copy into
+ * a GitHub issue — enough for us to spot a model that misbehaves consistently.
+ */
+function LlmDiagnostics() {
+  const [enabled, setEnabled] = useState(() => debugLog.isEnabled())
+  const [count, setCount] = useState(() => debugLog.getLogs().length)
+  const [status, setStatus] = useState('')
+
+  const flash = (msg) => {
+    setStatus(msg)
+    setTimeout(() => setStatus(''), 2000)
+  }
+
+  const toggle = (on) => {
+    debugLog.setEnabled(on)
+    setEnabled(on)
+    setCount(debugLog.getLogs().length)
+  }
+
+  const copyLogs = async () => {
+    const logs = debugLog.getLogs()
+    if (!logs.length) return flash('Nothing to copy yet')
+    const md = debugLog.toMarkdown(logs)
+    try {
+      await navigator.clipboard.writeText(md)
+      flash(`Copied ${logs.length} record${logs.length === 1 ? '' : 's'} ✓`)
+    } catch {
+      flash('Clipboard blocked — see console')
+      console.log(md)
+    }
+  }
+
+  const clear = () => {
+    debugLog.clearLogs()
+    setCount(0)
+    flash('Cleared ✓')
+  }
+
+  return (
+    <details style={{ marginTop: '1.25rem' }}>
+      <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--muted)' }}>
+        Troubleshooting: LLM diagnostics
+      </summary>
+
+      <div style={{ marginTop: '0.75rem' }}>
+        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={e => toggle(e.target.checked)}
+            style={{ marginTop: '0.25rem' }}
+          />
+          <span>
+            <strong>Log LLM diagnostics</strong>
+            <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+              Records the last {debugLog.MAX_RECORDS} AI requests and responses (model, prompt,
+              raw reply, timing) on this device only. Nothing is uploaded, and API keys are
+              never stored. Turn this on, reproduce a bad response, then copy the logs into a
+              GitHub issue.
+            </div>
+          </span>
+        </label>
+
+        <div className="flex gap-8 items-center" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={copyLogs} disabled={!count}>
+            📋 Copy diagnostic logs
+          </button>
+          <button className="btn btn-secondary" onClick={clear} disabled={!count}>
+            Clear logs
+          </button>
+          <span className="muted" style={{ fontSize: '0.85rem' }}>
+            {count} record{count === 1 ? '' : 's'} stored
+          </span>
+          {status && <span style={{ color: 'var(--good)' }}>{status}</span>}
+        </div>
+      </div>
+    </details>
   )
 }
