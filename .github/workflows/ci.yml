@@ -1,0 +1,55 @@
+name: CI
+
+# Runs the unit tests and a production build on every pull request, so a PR's
+# "mergeable" badge means "verified", not just "no merge conflict". Before this
+# workflow existed the repo had no PR checks at all: `gh pr view --json
+# statusCheckRollup` returned `[]` for every open PR, so long-lived PRs (e.g.
+# #63, open since June) were being offered for merge with zero automated
+# verification. deploy.yml only runs on push to main, i.e. after the fact.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One in-flight run per ref; a new push supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Root vitest also picks up the workspace packages (packages/folder-sync).
+      - name: Unit tests
+        run: npm test
+      # Mirrors deploy.yml's build so a PR cannot break Pages after it merges.
+      # The VITE_* client ids are only read at runtime, so the build does not
+      # need the deploy secrets.
+      - name: Production build
+        run: npm run build
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    # Unlike focus-planner, this repo's `npm run lint` is already clean on main
+    # (0 errors, 15 warnings), so this job is blocking rather than advisory.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
