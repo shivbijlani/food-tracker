@@ -55,9 +55,11 @@ export function useCoaching({ storageReady, entries, systemsText = '', proteinGo
     // Only reason about time-of-day when coaching the actual current day —
     // otherwise (e.g. reviewing a past date) "now" is meaningless.
     let currentTime = ''
+    let currentHour = null
     if (todayDate === todayStr()) {
       const now = new Date()
       const hr = now.getHours()
+      currentHour = hr
       const period =
         hr < 11 ? 'morning' :
         hr < 14 ? 'midday' :
@@ -134,6 +136,8 @@ export function useCoaching({ storageReady, entries, systemsText = '', proteinGo
       goalsText,
       frequentFoodsText,
       currentTime,
+      currentHour,
+      todayEntryCount: todayEntries.length,
       signal: ctrl.signal,
     })
       .then(text => { if (!ctrl.signal.aborted) setCoaching(text || null) })
