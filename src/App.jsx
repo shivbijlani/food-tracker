@@ -20,6 +20,9 @@ import {
   expandRecipeServings,
 } from './storage/suggestions.js'
 import * as llm from './llm.js'
+import {
+  todayStr, shiftDate, formatDateLabel, canGoNext, entriesForDate, clampDate,
+} from './dateNav.js'
 import * as openrouterAuth from './openrouter-auth.js'
 import SimpleMode from './SimpleMode.jsx'
 import { StatusBadge } from './StatusBadge.jsx'
@@ -38,11 +41,6 @@ const TABS = [
 ]
 
 const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
-
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 function num(v) {
   const n = Number(v)
@@ -507,7 +505,7 @@ function WeightRow({ weightEntries, onLog, today }) {
           <button
             className="icon-btn"
             onClick={() => { setVal(todayEntry.Weight); setUnit(todayEntry.Unit || 'kg'); setEditing(true) }}
-            title="Update today's weight"
+            title="Update this day's weight"
             style={{ fontSize: 12, marginLeft: 2 }}
           >✏️</button>
         </>
@@ -550,9 +548,63 @@ function WeightRow({ weightEntries, onLog, today }) {
   )
 }
 
+function DateNav({ selected, today, onSelect }) {
+  const isToday = selected === today
+  return (
+    <div className="date-nav">
+      <button
+        className="date-nav-arrow"
+        onClick={() => onSelect(shiftDate(selected, -1))}
+        title="Previous day"
+        aria-label="Previous day"
+      >‹</button>
+
+      <label className="date-nav-current">
+        <span className="date-nav-label">{formatDateLabel(selected, today)}</span>
+        <input
+          type="date"
+          className="date-nav-input"
+          value={selected}
+          max={today}
+          onChange={e => onSelect(clampDate(e.target.value, today))}
+          aria-label="Select date"
+        />
+      </label>
+
+      <button
+        className="date-nav-arrow"
+        onClick={() => onSelect(shiftDate(selected, 1))}
+        disabled={!canGoNext(selected, today)}
+        title="Next day"
+        aria-label="Next day"
+      >›</button>
+
+      {!isToday && (
+        <button className="btn-secondary date-nav-today" onClick={() => onSelect(today)}>
+          Today
+        </button>
+      )}
+    </div>
+  )
+}
+
 function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggestions, weightEntries, onLogWeight }) {
   const today = todayStr()
-  const todays = entries.filter(e => e.Date === today)
+  const [selectedDate, setSelectedDate] = useState(today)
+
+  // If the app is left open across midnight, `today` moves and a selection of
+  // the old "today" would silently become a past day. Follow it forward, but
+  // only when the user was actually sitting on today.
+  const prevTodayRef = useRef(today)
+  useEffect(() => {
+    if (prevTodayRef.current !== today) {
+      setSelectedDate(prev => (prev === prevTodayRef.current ? today : prev))
+      prevTodayRef.current = today
+    }
+  }, [today])
+
+  const isToday = selectedDate === today
+  const todays = entriesForDate(entries, selectedDate)
 
   const totals = todays.reduce((acc, e) => ({
     calories: acc.calories + num(e.Calories),
@@ -576,7 +628,8 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
   return (
     <>
       <div className="card">
-        <h2>Today's Progress</h2>
+        <h2>{isToday ? "Today's Progress" : `Progress — ${formatDateLabel(selectedDate, today)}`}</h2>
+        <DateNav selected={selectedDate} today={today} onSelect={setSelectedDate} />
         {rows.map(r => {
           const pct = r.goal ? Math.min(100, Math.round((r.value / r.goal.hi) * 100)) : 0
           return (
@@ -592,17 +645,21 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
           )
         })}
         <div className="muted" style={{ marginTop: 8 }}>
-          Omega-3 today: <strong style={{ color: totals.omega3 ? 'var(--good)' : 'var(--bad)' }}>{totals.omega3 ? '✓ Yes' : '✗ Not yet'}</strong>
+          Omega-3 {isToday ? 'today' : 'that day'}: <strong style={{ color: totals.omega3 ? 'var(--good)' : 'var(--bad)' }}>{totals.omega3 ? '✓ Yes' : '✗ Not yet'}</strong>
         </div>
-        <WeightRow weightEntries={weightEntries} onLog={onLogWeight} today={today} />
+        {/* `key` remounts the row when the selected day changes (#57), so a
+            weight typed but not saved can never follow the user to another
+            date and be logged against it. React's documented alternative to
+            a reset-state effect. */}
+        <WeightRow key={selectedDate} weightEntries={weightEntries} onLog={onLogWeight} today={selectedDate} />
       </div>
 
-      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} suggestions={suggestions} />
+      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={selectedDate} suggestions={suggestions} />
 
       <div className="card">
-        <h2>Today's Entries ({todays.length})</h2>
+        <h2>{isToday ? "Today's Entries" : `Entries — ${formatDateLabel(selectedDate, today)}`} ({todays.length})</h2>
         {todays.length === 0 ? (
-          <div className="empty">Nothing logged yet today.</div>
+          <div className="empty">{isToday ? 'Nothing logged yet today.' : 'Nothing logged on this day.'}</div>
         ) : todays.map((e) => {
           const globalIdx = entries.indexOf(e)
           return (
