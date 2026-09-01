@@ -29,7 +29,8 @@ import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
 import AutocompleteInput from './AutocompleteInput.jsx'
-import { groupByMeal, formatMealSummary, mealToText, dayToText, copyText } from './mealSummary.js'
+import { groupByMeal, dayToText } from './mealSummary.js'
+import { MealSection, CopyButton } from './MealSection.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -1065,62 +1066,6 @@ function EntryRow({ entry, onDelete, onUpdate }) {
   )
 }
 
-// A copy button that reports what happened. Copying can silently fail (denied
-// permission, or no async clipboard on a plain-http origin), and a button that
-// looks like it worked is worse than one that says it did not.
-function CopyButton({ getText, label = 'Copy', title }) {
-  const [state, setState] = useState('idle')
-
-  const click = async (ev) => {
-    ev.stopPropagation()
-    ev.preventDefault()
-    const ok = await copyText(getText())
-    setState(ok ? 'done' : 'failed')
-    setTimeout(() => setState('idle'), 1800)
-  }
-
-  return (
-    <button
-      className="btn btn-secondary copy-btn"
-      onClick={click}
-      title={title || 'Copy to clipboard'}
-    >
-      {state === 'done' ? 'Copied' : state === 'failed' ? 'Copy failed' : label}
-    </button>
-  )
-}
-
-// One meal inside a day: a condensed summary line that is always visible, with
-// the detail rows and edit controls collapsed underneath it (issue #58).
-function MealSection({ meal, entries, totals, date, allEntries, onDelete, onUpdate, defaultOpen }) {
-  return (
-    <details className="meal-section" open={defaultOpen}>
-      <summary className="meal-summary">
-        <span className="meal-summary-name">{meal}</span>
-        <span className="meal-summary-totals">{formatMealSummary(totals)}</span>
-      </summary>
-      <div className="meal-actions">
-        <CopyButton
-          getText={() => mealToText({ meal, entries, totals }, date)}
-          label={`Copy ${meal.toLowerCase()}`}
-          title={`Copy this ${meal.toLowerCase()} as text`}
-        />
-      </div>
-      {entries.map((e, i) => {
-        const globalIdx = allEntries.indexOf(e)
-        return (
-          <EntryRow
-            key={i}
-            entry={e}
-            onUpdate={onUpdate && ((updated) => onUpdate(globalIdx, updated))}
-            onDelete={() => onDelete(globalIdx)}
-          />
-        )
-      })}
-    </details>
-  )
-}
-
 function LogView({ entries, onDelete, onUpdate }) {
   // Group by date
   const byDate = {}
@@ -1160,11 +1105,20 @@ function LogView({ entries, onDelete, onUpdate }) {
                 key={group.meal}
                 {...group}
                 date={date}
-                allEntries={entries}
-                onDelete={onDelete}
-                onUpdate={onUpdate}
                 defaultOpen={dayIdx === 0}
-              />
+              >
+                {group.entries.map((e, i) => {
+                  const globalIdx = entries.indexOf(e)
+                  return (
+                    <EntryRow
+                      key={i}
+                      entry={e}
+                      onUpdate={onUpdate && ((updated) => onUpdate(globalIdx, updated))}
+                      onDelete={() => onDelete(globalIdx)}
+                    />
+                  )
+                })}
+              </MealSection>
             ))}
           </div>
         )
