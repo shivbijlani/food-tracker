@@ -29,6 +29,8 @@ import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
 import AutocompleteInput from './AutocompleteInput.jsx'
+import { groupByMeal, dayToText } from './mealSummary.js'
+import { MealSection, CopyButton } from './MealSection.jsx'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -1080,7 +1082,7 @@ function LogView({ entries, onDelete, onUpdate }) {
   return (
     <div className="card">
       <h2>All Entries ({entries.length})</h2>
-      {dates.map(date => {
+      {dates.map((date, dayIdx) => {
         const dayEntries = byDate[date]
         const totals = dayEntries.reduce((a, e) => ({
           cal: a.cal + num(e.Calories),
@@ -1095,19 +1097,29 @@ function LogView({ entries, onDelete, onUpdate }) {
               <h3>{date}</h3>
               <span className="day-totals">
                 {Math.round(totals.cal)} kcal · {Math.round(totals.pro)}g pro · {Math.round(totals.ca)}mg Ca · {totals.veg} veg{totals.water > 0 ? ` · ${Math.round(totals.water)}oz water` : ''}
+                <CopyButton getText={() => dayToText(dayEntries, date)} label="Copy day" title="Copy the whole day as text" />
               </span>
             </div>
-            {dayEntries.map((e, i) => {
-              const globalIdx = entries.indexOf(e)
-              return (
-                <EntryRow
-                  key={i}
-                  entry={e}
-                  onUpdate={onUpdate && ((updated) => onUpdate(globalIdx, updated))}
-                  onDelete={() => onDelete(globalIdx)}
-                />
-              )
-            })}
+            {groupByMeal(dayEntries).map(group => (
+              <MealSection
+                key={group.meal}
+                {...group}
+                date={date}
+                defaultOpen={dayIdx === 0}
+              >
+                {group.entries.map((e, i) => {
+                  const globalIdx = entries.indexOf(e)
+                  return (
+                    <EntryRow
+                      key={i}
+                      entry={e}
+                      onUpdate={onUpdate && ((updated) => onUpdate(globalIdx, updated))}
+                      onDelete={() => onDelete(globalIdx)}
+                    />
+                  )
+                })}
+              </MealSection>
+            ))}
           </div>
         )
       })}
