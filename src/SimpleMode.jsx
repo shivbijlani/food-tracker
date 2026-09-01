@@ -13,6 +13,8 @@ import {
   parseSuggestions,
   serializeSuggestions,
   upsertSuggestion,
+  suggestionPatchFromEntry,
+  nutritionChanged,
   expandWithHalves,
   recipeServingsCount,
 } from './storage/suggestions.js'
@@ -235,22 +237,18 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     setEntries(sorted)
   }
 
-  const addEntries = async (newEntries) => {
-    let nextLog = entries
-    for (const e of newEntries) {
-      nextLog = mergeEntry(nextLog, e, 'simple')
-    }
-    await saveLog(nextLog)
-
+  // Shared by the add path and the edit path (issue #59). Simple mode names a
+  // food by its Meal cell and stores protein only — see suggestions.js.
+  const persistSuggestionsFor = async (list) => {
     let nextSuggestions = suggestions
-    for (const e of newEntries) {
-      if (e?.Meal) {
-        nextSuggestions = upsertSuggestion(nextSuggestions, {
-          name: e.Meal,
-          protein_g: e['Protein (g)'],
-        })
-      }
+    let touched = false
+    for (const e of list) {
+      const patch = suggestionPatchFromEntry(e, 'simple')
+      if (!patch) continue
+      nextSuggestions = upsertSuggestion(nextSuggestions, patch)
+      touched = true
     }
+    if (!touched) return
     setSuggestions(nextSuggestions)
     try {
       await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
@@ -259,8 +257,21 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     }
   }
 
-  const updateEntry = async (idx, entry) => {
+  const addEntries = async (newEntries) => {
+    let nextLog = entries
+    for (const e of newEntries) {
+      nextLog = mergeEntry(nextLog, e, 'simple')
+    }
+    await saveLog(nextLog)
+
+    await persistSuggestionsFor(newEntries)
+  }
+
+  // `updateSaved` is opt-in per edit so a one-off correction does not silently
+  // rewrite the reusable food. SimpleEntryRow only offers it when the value changed.
+  const updateEntry = async (idx, entry, { updateSaved = false } = {}) => {
     await saveLog(updateEntryAt(entries, idx, entry))
+    if (updateSaved) await persistSuggestionsFor([entry])
   }
 
   const deleteEntry = async (idx) => {
@@ -481,7 +492,7 @@ function SimpleDayRow({ date, dayEntries, allEntries, onUpdate, onDelete }) {
                 key={i}
                 entry={e}
                 startEditing
-                onUpdate={(updated) => onUpdate(globalIdx, updated)}
+                onUpdate={(updated, opts) => onUpdate(globalIdx, updated, opts)}
                 onDelete={() => onDelete(globalIdx)}
               />
             )
@@ -511,11 +522,18 @@ function SimpleDayRow({ date, dayEntries, allEntries, onUpdate, onDelete }) {
 function SimpleEntryRow({ entry, onUpdate, onDelete, startEditing = false }) {
   const [editing, setEditing] = useState(startEditing)
   const [draft, setDraft] = useState(entry)
+  const [updateSaved, setUpdateSaved] = useState(true)
 
   if (editing) {
     const set = (k, v) => setDraft(d => ({ ...d, [k]: v }))
-    const save = async () => { await onUpdate(draft); setEditing(false) }
-    const cancel = () => { setDraft(entry); setEditing(false) }
+    // Only offer the saved-food update when the edit changes something
+    // suggestions.csv stores — changing only the date must never touch it.
+    const offerSavedUpdate = nutritionChanged(entry, draft, 'simple')
+    const save = async () => {
+      await onUpdate(draft, { updateSaved: offerSavedUpdate && updateSaved })
+      setEditing(false)
+    }
+    const cancel = () => { setDraft(entry); setUpdateSaved(true); setEditing(false) }
     return (
       <div className="entry-row" style={{ background: 'rgba(0,0,0,0.04)', flexWrap: 'wrap', gap: 6, padding: 6 }}>
         <input type="date" value={draft.Date || ''} onChange={e => set('Date', e.target.value)} />
@@ -533,6 +551,19 @@ function SimpleEntryRow({ entry, onUpdate, onDelete, startEditing = false }) {
         />
         <button className="icon-btn" title="Save" onClick={save}>✓</button>
         <button className="icon-btn" title="Cancel" onClick={cancel}>✕</button>
+        {offerSavedUpdate && (
+          <label
+            className="muted"
+            style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+          >
+            <input
+              type="checkbox"
+              checked={updateSaved}
+              onChange={e => setUpdateSaved(e.target.checked)}
+            />
+            <span>Remember this protein value for next time</span>
+          </label>
+        )}
       </div>
     )
   }

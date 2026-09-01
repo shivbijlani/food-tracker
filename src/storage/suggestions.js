@@ -107,6 +107,61 @@ export function upsertSuggestion(items, incoming) {
   return next
 }
 
+// ---- Log entry <-> suggestion bridge (issue #59) ----
+//
+// A log entry uses display column names ('Food Description', 'Protein (g)'…)
+// while suggestions.csv uses short keys. Both the add path and the edit path
+// need the same translation, so it lives here rather than in App.jsx — that
+// duplication is what let the two paths drift apart in the first place.
+//
+// The two modes disagree on shape: advanced names a food in 'Food Description'
+// and stores five nutrients; simple names it in 'Meal' and stores protein only.
+
+const FIELD_MAP = Object.freeze({
+  advanced: {
+    nameCol: 'Food Description',
+    fields: {
+      'Protein (g)': 'protein_g',
+      'Calories': 'calories',
+      'Calcium (mg)': 'calcium_mg',
+      'Veg Servings': 'veg_servings',
+      'Omega-3': 'omega3',
+    },
+  },
+  simple: {
+    nameCol: 'Meal',
+    fields: { 'Protein (g)': 'protein_g' },
+  },
+})
+
+// Build the upsert payload for a log entry, or null when the entry has no
+// food name to key on. Blank fields are preserved as blanks so upsertSuggestion
+// can apply its own "don't clobber with empty" rule.
+export function suggestionPatchFromEntry(entry, mode = 'advanced') {
+  const map = FIELD_MAP[mode] || FIELD_MAP.advanced
+  const name = ((entry && entry[map.nameCol]) || '').trim()
+  if (!name) return null
+  const patch = { name }
+  for (const [entryCol, suggestionCol] of Object.entries(map.fields)) {
+    patch[suggestionCol] = entry[entryCol]
+  }
+  return patch
+}
+
+// True when an edit changed any value that a saved food actually stores.
+// Renaming the food counts: the saved item is keyed by name, so a rename
+// targets a different saved food entirely.
+//
+// Used to decide whether to even offer "update the saved values" — editing a
+// note or a date must never touch the food database.
+export function nutritionChanged(before, after, mode = 'advanced') {
+  if (!before || !after) return false
+  const map = FIELD_MAP[mode] || FIELD_MAP.advanced
+  const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim()
+  if (norm(before[map.nameCol]) !== norm(after[map.nameCol])) return true
+  return Object.keys(map.fields).some(col => norm(before[col]) !== norm(after[col]))
+}
+
 // Number of servings a recipe yields. Recipes store whole-recipe totals, so
 // this is the divisor used to derive per-serving nutrition. Blank/invalid
 // values fall back to 1 (treat the recipe as a single serving).
