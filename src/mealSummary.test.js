@@ -8,6 +8,7 @@ import {
   mealToText,
   dayToText,
   copyText,
+  handleCopyClick,
 } from './mealSummary.js'
 
 const entry = (over = {}) => ({
@@ -216,5 +217,36 @@ describe('copyText', () => {
     const writeText = vi.fn()
     await expect(copyText('', { clipboard: { writeText } })).resolves.toBe(false)
     expect(writeText).not.toHaveBeenCalled()
+  })
+})
+
+describe('handleCopyClick', () => {
+  it('copies the text the getter returns', async () => {
+    const onCopy = vi.fn().mockResolvedValue(true)
+    await handleCopyClick(null, { getText: () => 'Lunch\n- Chicken salad', onCopy })
+    expect(onCopy).toHaveBeenCalledWith('Lunch\n- Chicken salad')
+  })
+
+  it('does not toggle the surrounding disclosure when clicked', async () => {
+    const stopPropagation = vi.fn()
+    const preventDefault = vi.fn()
+    await handleCopyClick({ stopPropagation, preventDefault }, {
+      getText: () => 'x',
+      onCopy: vi.fn().mockResolvedValue(true),
+    })
+    expect(stopPropagation).toHaveBeenCalled()
+    expect(preventDefault).toHaveBeenCalled()
+  })
+
+  it('reports the failure to the button instead of pretending it copied', async () => {
+    const setState = vi.fn()
+    await handleCopyClick(null, { getText: () => 'x', onCopy: vi.fn().mockResolvedValue(false), setState })
+    expect(setState).toHaveBeenCalledWith('failed')
+  })
+
+  it('marks success so the button can confirm it', async () => {
+    const setState = vi.fn()
+    await handleCopyClick(null, { getText: () => 'x', onCopy: vi.fn().mockResolvedValue(true), setState })
+    expect(setState).toHaveBeenCalledWith('done')
   })
 })

@@ -5,9 +5,9 @@
 // eaten items on the clipboard". Unit-testing the formatting functions alone
 // would leave the wiring unverified, which is exactly where a UI change breaks.
 // react-dom/server is enough to assert structure without adding a DOM harness.
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MealSection, CopyButton, handleCopyClick } from './MealSection.jsx'
+import { MealSection, CopyButton } from './MealSection.jsx'
 import { groupByMeal } from './mealSummary.js'
 
 const entry = (over = {}) => ({
@@ -63,37 +63,6 @@ describe('MealSection', () => {
   it('renders whatever entry rows it is given', () => {
     const html = renderMeal([entry()])
     expect(html).toContain('Chicken salad')
-  })
-})
-
-describe('handleCopyClick', () => {
-  it('copies the text the getter returns', async () => {
-    const onCopy = vi.fn().mockResolvedValue(true)
-    await handleCopyClick(null, { getText: () => 'Lunch\n- Chicken salad', onCopy })
-    expect(onCopy).toHaveBeenCalledWith('Lunch\n- Chicken salad')
-  })
-
-  it('does not toggle the surrounding disclosure when clicked', async () => {
-    const stopPropagation = vi.fn()
-    const preventDefault = vi.fn()
-    await handleCopyClick({ stopPropagation, preventDefault }, {
-      getText: () => 'x',
-      onCopy: vi.fn().mockResolvedValue(true),
-    })
-    expect(stopPropagation).toHaveBeenCalled()
-    expect(preventDefault).toHaveBeenCalled()
-  })
-
-  it('reports the failure to the button instead of pretending it copied', async () => {
-    const setState = vi.fn()
-    await handleCopyClick(null, { getText: () => 'x', onCopy: vi.fn().mockResolvedValue(false), setState })
-    expect(setState).toHaveBeenCalledWith('failed')
-  })
-
-  it('marks success so the button can confirm it', async () => {
-    const setState = vi.fn()
-    await handleCopyClick(null, { getText: () => 'x', onCopy: vi.fn().mockResolvedValue(true), setState })
-    expect(setState).toHaveBeenCalledWith('done')
   })
 })
 

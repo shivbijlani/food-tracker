@@ -104,6 +104,22 @@ export function dayToText(entries, date) {
 }
 
 /**
+ * The copy click, as a pure function so it can be asserted without a DOM.
+ * Returns whether the copy succeeded.
+ */
+export async function handleCopyClick(ev, { getText, onCopy = copyText, setState = () => {} }) {
+  // The button sits inside a <summary>; without this a copy would also toggle
+  // the disclosure, which reads as the click having done the wrong thing.
+  if (ev) {
+    ev.stopPropagation?.()
+    ev.preventDefault?.()
+  }
+  const ok = await onCopy(getText())
+  setState(ok ? 'done' : 'failed')
+  return ok
+}
+
+/**
  * Clipboard write that reports success instead of throwing, so the caller can
  * show "Copied"/"Copy failed" rather than dying inside an onClick handler.
  * Falls back to execCommand for the non-secure-origin case (plain http on a

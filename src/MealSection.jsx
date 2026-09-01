@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { formatMealSummary, mealToText, copyText } from './mealSummary.js'
+import { formatMealSummary, mealToText, copyText, handleCopyClick } from './mealSummary.js'
 
 /**
  * A copy button that reports what happened.
@@ -10,22 +10,6 @@ import { formatMealSummary, mealToText, copyText } from './mealSummary.js'
  * did not, because the user pastes stale clipboard content and blames the
  * other app.
  */
-/**
- * The copy click, as a pure function so it can be asserted without a DOM.
- * Returns whether the copy succeeded.
- */
-export async function handleCopyClick(ev, { getText, onCopy = copyText, setState = () => {} }) {
-  // The button sits inside a <summary>; without this a copy would also toggle
-  // the disclosure, which reads as the click having done the wrong thing.
-  if (ev) {
-    ev.stopPropagation?.()
-    ev.preventDefault?.()
-  }
-  const ok = await onCopy(getText())
-  setState(ok ? 'done' : 'failed')
-  return ok
-}
-
 export function CopyButton({ getText, label = 'Copy', title, onCopy = copyText }) {
   const [state, setState] = useState('idle')
 
