@@ -16,6 +16,8 @@ import {
   parseSuggestions,
   serializeSuggestions,
   upsertSuggestion,
+  suggestionPatchFromEntry,
+  nutritionChanged,
   expandWithHalves,
   expandRecipeServings,
 } from './storage/suggestions.js'
@@ -336,6 +338,28 @@ export default function App() {
     setWeightEntries(newRows)
   }
 
+  // Upsert the saved-food database from a set of log entries, then persist it.
+  // Shared by the add path and the edit path (issue #59) so the two cannot
+  // drift apart again — previously only `addEntries` did this, so editing an
+  // already-logged item left the saved values stale.
+  const persistSuggestionsFor = async (entries) => {
+    let nextSuggestions = suggestions
+    let touched = false
+    for (const e of entries) {
+      const patch = suggestionPatchFromEntry(e)
+      if (!patch) continue
+      nextSuggestions = upsertSuggestion(nextSuggestions, patch)
+      touched = true
+    }
+    if (!touched) return
+    setSuggestions(nextSuggestions)
+    try {
+      await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
+    } catch (e) {
+      console.warn('Failed to persist suggestions.csv:', e)
+    }
+  }
+
   const addEntries = async (newEntries) => {
     // 1. Update log (merging items that share Date+Meal)
     let nextLog = logEntries
@@ -345,29 +369,15 @@ export default function App() {
     await saveLog(nextLog)
 
     // 2. Update suggestions (tracking each item individually)
-    let nextSuggestions = suggestions
-    for (const e of newEntries) {
-      if (e?.['Food Description']) {
-        nextSuggestions = upsertSuggestion(nextSuggestions, {
-          name: e['Food Description'],
-          protein_g: e['Protein (g)'],
-          calories: e.Calories,
-          calcium_mg: e['Calcium (mg)'],
-          veg_servings: e['Veg Servings'],
-          omega3: e['Omega-3'],
-        })
-      }
-    }
-    setSuggestions(nextSuggestions)
-    try {
-      await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
-    } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
-    }
+    await persistSuggestionsFor(newEntries)
   }
 
-  const updateEntry = async (idx, entry) => {
+  // `updateSaved` is opt-in per edit: a one-off correction (halved portion,
+  // fixing a typo in one row) must not silently rewrite the reusable food.
+  // EntryRow only offers it when nutrition actually changed.
+  const updateEntry = async (idx, entry, { updateSaved = false } = {}) => {
     await saveLog(updateEntryAt(logEntries, idx, entry))
+    if (updateSaved) await persistSuggestionsFor([entry])
   }
 
   const deleteEntry = async (idx) => {
@@ -609,7 +619,7 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
             <EntryRow
               key={globalIdx}
               entry={e}
-              onUpdate={(updated) => onUpdate(globalIdx, updated)}
+              onUpdate={(updated, opts) => onUpdate(globalIdx, updated, opts)}
               onDelete={() => onDelete(globalIdx)}
             />
           )
@@ -994,11 +1004,18 @@ function NumStat({ label, value, onChange, step = '1' }) {
 function EntryRow({ entry, onDelete, onUpdate }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(entry)
+  const [updateSaved, setUpdateSaved] = useState(true)
 
   if (editing) {
     const set = (k, v) => setDraft(d => ({ ...d, [k]: v }))
-    const save = async () => { await onUpdate(draft); setEditing(false) }
-    const cancel = () => { setDraft(entry); setEditing(false) }
+    // Only surface the saved-food choice when the edit actually changes a value
+    // that suggestions.csv stores — editing a note or a date must never touch it.
+    const offerSavedUpdate = nutritionChanged(entry, draft)
+    const save = async () => {
+      await onUpdate(draft, { updateSaved: offerSavedUpdate && updateSaved })
+      setEditing(false)
+    }
+    const cancel = () => { setDraft(entry); setUpdateSaved(true); setEditing(false) }
     return (
       <div className="entry" style={{ background: 'rgba(0,0,0,0.03)' }}>
         <div className="entry-header">
@@ -1032,6 +1049,23 @@ function EntryRow({ entry, onDelete, onUpdate }) {
           <button className="btn" onClick={save}>Save</button>
           <button className="btn btn-secondary" onClick={cancel}>Cancel</button>
         </div>
+        {offerSavedUpdate && (
+          <label
+            className="muted"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 13 }}
+          >
+            <input
+              type="checkbox"
+              checked={updateSaved}
+              onChange={e => setUpdateSaved(e.target.checked)}
+            />
+            <span>
+              Also update the saved values for{' '}
+              <strong>{(draft['Food Description'] || '').trim() || 'this food'}</strong>
+              {' '}so they are reused next time
+            </span>
+          </label>
+        )}
       </div>
     )
   }
@@ -1103,7 +1137,7 @@ function LogView({ entries, onDelete, onUpdate }) {
                 <EntryRow
                   key={i}
                   entry={e}
-                  onUpdate={onUpdate && ((updated) => onUpdate(globalIdx, updated))}
+                  onUpdate={onUpdate && ((updated, opts) => onUpdate(globalIdx, updated, opts))}
                   onDelete={() => onDelete(globalIdx)}
                 />
               )
