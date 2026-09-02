@@ -1252,3 +1252,75 @@ table.simple th {
     font-size: 11px;
   }
 }
+
+/* -- Day navigator (tracker: view/log a past day, issue #57) -- */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.card-head h2 { margin: 0; }
+
+.day-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.day-nav-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+}
+.day-nav-btn:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+.day-nav-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* The visible label is the control; the native date input sits on top of it so
+   tapping anywhere on the label opens the platform picker. */
+.day-nav-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  min-width: 116px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.day-nav-label:hover { background: var(--bg); }
+.day-nav-text { pointer-events: none; white-space: nowrap; }
+.day-nav-label input[type="date"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.day-nav-label:focus-within {
+  outline: 2px solid var(--accent, #4a9eff);
+  outline-offset: 1px;
+}
+
+.day-nav-today {
+  padding: 4px 10px;
+  font-size: 13px;
+  min-height: 32px;
+}

@@ -29,6 +29,9 @@ import { Footer } from './Footer.jsx'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import { debounce } from './debounce.js'
 import AutocompleteInput from './AutocompleteInput.jsx'
+import {
+  todayStr, shiftDate, dayHeading, formatDayLabel, dayPhrase, canGoForward, clampToToday,
+} from './dateNav.js'
 
 const TABS = [
   { id: 'today', label: 'Today' },
@@ -38,11 +41,6 @@ const TABS = [
 ]
 
 const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
-
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 function num(v) {
   const n = Number(v)
@@ -550,9 +548,63 @@ function WeightRow({ weightEntries, onLog, today }) {
   )
 }
 
+function DayNav({ selectedDate, today, onChange }) {
+  const forward = canGoForward(selectedDate, today)
+  return (
+    <div className="day-nav">
+      <button
+        className="day-nav-btn"
+        onClick={() => onChange(shiftDate(selectedDate, -1))}
+        title="Previous day"
+        aria-label="Previous day"
+      >‹</button>
+
+      <label className="day-nav-label">
+        <span className="day-nav-text">{formatDayLabel(selectedDate, today)}</span>
+        <input
+          type="date"
+          value={selectedDate}
+          max={today}
+          onChange={e => onChange(clampToToday(e.target.value, today))}
+          aria-label="Pick a day to view"
+        />
+      </label>
+
+      <button
+        className="day-nav-btn"
+        onClick={() => forward && onChange(shiftDate(selectedDate, 1))}
+        disabled={!forward}
+        title={forward ? 'Next day' : 'Already on today'}
+        aria-label="Next day"
+      >›</button>
+
+      {selectedDate !== today && (
+        <button className="btn btn-secondary day-nav-today" onClick={() => onChange(today)}>
+          Today
+        </button>
+      )}
+    </div>
+  )
+}
+
 function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggestions, weightEntries, onLogWeight }) {
   const today = todayStr()
-  const todays = entries.filter(e => e.Date === today)
+  const [selectedDate, setSelectedDate] = useState(today)
+
+  // If the app is left open across midnight, "today" moves on underneath a view
+  // still pinned to yesterday's date, and new entries would silently log to the
+  // wrong day. Follow the rollover, but only when the user had not deliberately
+  // navigated away. This is React's documented "adjust state during render"
+  // pattern rather than an effect, so it resolves before anything is painted.
+  const [knownToday, setKnownToday] = useState(today)
+  if (today !== knownToday) {
+    if (selectedDate === knownToday) setSelectedDate(today)
+    setKnownToday(today)
+  }
+
+  const isToday = selectedDate === today
+  const heading = dayHeading(selectedDate, today)
+  const todays = entries.filter(e => e.Date === selectedDate)
 
   const totals = todays.reduce((acc, e) => ({
     calories: acc.calories + num(e.Calories),
@@ -576,7 +628,10 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
   return (
     <>
       <div className="card">
-        <h2>Today's Progress</h2>
+        <div className="card-head">
+          <h2>{heading} Progress</h2>
+          <DayNav selectedDate={selectedDate} today={today} onChange={setSelectedDate} />
+        </div>
         {rows.map(r => {
           const pct = r.goal ? Math.min(100, Math.round((r.value / r.goal.hi) * 100)) : 0
           return (
@@ -592,17 +647,19 @@ function TodayView({ entries, goals, onAdd, onUpdate, onDelete, recipes, suggest
           )
         })}
         <div className="muted" style={{ marginTop: 8 }}>
-          Omega-3 today: <strong style={{ color: totals.omega3 ? 'var(--good)' : 'var(--bad)' }}>{totals.omega3 ? '✓ Yes' : '✗ Not yet'}</strong>
+          Omega-3 {dayPhrase(selectedDate, today)}: <strong style={{ color: totals.omega3 ? 'var(--good)' : 'var(--bad)' }}>{totals.omega3 ? '✓ Yes' : '✗ Not yet'}</strong>
         </div>
-        <WeightRow weightEntries={weightEntries} onLog={onLogWeight} today={today} />
+        <WeightRow weightEntries={weightEntries} onLog={onLogWeight} today={selectedDate} />
       </div>
 
-      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={today} suggestions={suggestions} />
+      <AddEntry onAdd={onAdd} recipes={recipes} defaultDate={selectedDate} suggestions={suggestions} />
 
       <div className="card">
-        <h2>Today's Entries ({todays.length})</h2>
+        <h2>{heading} Entries ({todays.length})</h2>
         {todays.length === 0 ? (
-          <div className="empty">Nothing logged yet today.</div>
+          <div className="empty">
+            {isToday ? 'Nothing logged yet today.' : `Nothing logged ${dayPhrase(selectedDate, today)}.`}
+          </div>
         ) : todays.map((e) => {
           const globalIdx = entries.indexOf(e)
           return (
