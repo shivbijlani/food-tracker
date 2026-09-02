@@ -70,6 +70,51 @@ export function serializeSuggestions(items) {
   return [header, ...rows].join('\n') + '\n'
 }
 
+// The log-entry columns that carry nutrition, paired with the suggestion
+// column each one feeds. Kept here (not in App.jsx) so the add path and the
+// edit path cannot drift apart — see issue #59.
+export const ENTRY_TO_SUGGESTION = {
+  'Protein (g)': 'protein_g',
+  Calories: 'calories',
+  'Calcium (mg)': 'calcium_mg',
+  'Veg Servings': 'veg_servings',
+  'Omega-3': 'omega3',
+}
+
+// Maps a log entry onto the shape upsertSuggestion() expects.
+export function suggestionFromEntry(entry) {
+  const out = { name: entry?.['Food Description'] || '' }
+  for (const [entryCol, sugCol] of Object.entries(ENTRY_TO_SUGGESTION)) {
+    out[sugCol] = entry?.[entryCol]
+  }
+  return out
+}
+
+// True when `edited` carries nutrition that differs from `original`.
+//
+// Blank-vs-zero must NOT count as a change: upsertSuggestion() ignores empty
+// values anyway, so offering to save one would promise an update that never
+// happens. Compared numerically where both sides are numbers so "5" and "5.0"
+// are the same answer.
+export function nutritionChanged(original, edited) {
+  for (const entryCol of Object.keys(ENTRY_TO_SUGGESTION)) {
+    const a = original?.[entryCol]
+    const b = edited?.[entryCol]
+    const aBlank = a === undefined || a === null || String(a).trim() === ''
+    const bBlank = b === undefined || b === null || String(b).trim() === ''
+    if (bBlank) continue // an emptied field cannot overwrite a saved value
+    if (aBlank) return true
+    const an = Number(a)
+    const bn = Number(b)
+    if (Number.isFinite(an) && Number.isFinite(bn)) {
+      if (an !== bn) return true
+    } else if (String(a).trim() !== String(b).trim()) {
+      return true
+    }
+  }
+  return false
+}
+
 // Returns a new list with `incoming` upserted (deduped by lowercased name).
 // Empty fields on `incoming` do not clobber existing non-empty values —
 // this matters for simple mode (only protein known) updating advanced entries.
