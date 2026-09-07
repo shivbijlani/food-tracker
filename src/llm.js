@@ -11,13 +11,17 @@ const GITHUB_KEY_STORAGE = 'mealjot-github-key'
 const GITHUB_MODEL_STORAGE = 'mealjot-github-model'
 const OPENROUTER_MODEL_STORAGE = 'mealjot-openrouter-model'
 
-// Dynamically fetches free model IDs from OpenRouter's public catalog.
-// Caches the result for 1 hour so we don't hit the API on every request.
+// Dynamically fetches OpenRouter's public catalog and picks free models we can
+// actually use. Caches for an hour so we don't hit the API on every request.
 let _freeModelsCache = null
 let _freeModelsCacheTime = 0
 const FREE_MODELS_TTL = 60 * 60 * 1000 // 1 hour
 
-async function fetchFreeModels() {
+// Slugs that used to be shipped as defaults but do not exist in the catalog.
+// Treated as "auto" so upgrading users aren't stuck on a dead model.
+const RETIRED_MODEL_IDS = new Set(['openrouter/auto:free'])
+
+async function fetchModelCatalog() {
   if (_freeModelsCache && Date.now() - _freeModelsCacheTime < FREE_MODELS_TTL) {
     return _freeModelsCache
   }
@@ -25,27 +29,64 @@ async function fetchFreeModels() {
     const res = await fetch('https://openrouter.ai/api/v1/models')
     if (!res.ok) return _freeModelsCache || []
     const { data } = await res.json()
-    // Filter to free models (prompt and completion both $0), prefer those with
-    // text output and larger context. Sort by context length descending so
-    // higher-quality models are tried first.
-    const free = data
-      .filter(m => m.pricing?.prompt === '0' && m.pricing?.completion === '0'
-        && m.id.endsWith(':free')
-        && m.architecture?.output_modalities?.includes('text'))
-      .sort((a, b) => (b.top_provider?.context_length || 0) - (a.top_provider?.context_length || 0))
-      .map(m => m.id)
-    if (free.length > 0) {
-      _freeModelsCache = free
+    if (Array.isArray(data) && data.length > 0) {
+      _freeModelsCache = data
       _freeModelsCacheTime = Date.now()
+      return data
     }
-    return free
+    return _freeModelsCache || []
   } catch {
     return _freeModelsCache || []
   }
 }
 
+// A model is only offered if its declared capabilities cover what we actually
+// send. OpenRouter filters the candidate list server-side and returns 404
+// "No models match your request and model restrictions" when nothing survives,
+// so sending a model that can't honour our request is the same as sending none.
+//
+// We require structured-output support for every request, not just estimation.
+// The catalog exposes no flag for models gated to agentic harnesses (those
+// return 403 "only available on agentic harnesses"), but in practice they
+// advertise neither parameter — so this is also our best proxy for "callable
+// from a browser app at all".
+function isUsableFreeModel(m) {
+  if (!m?.id?.endsWith(':free')) return false
+  if (m.pricing?.prompt !== '0' || m.pricing?.completion !== '0') return false
+  if (!m.architecture?.output_modalities?.includes('text')) return false
+  // Retired models keep appearing in the catalog until their expiry passes.
+  if (m.expiration_date && Date.parse(m.expiration_date) < Date.now()) return false
+  const params = m.supported_parameters || []
+  return params.includes('structured_outputs') && params.includes('response_format')
+}
+
+/**
+ * Builds the `models` array for an OpenRouter request.
+ *
+ * `preferred` is the user's explicit choice, or empty for automatic. Free and
+ * automatic selections are backed by catalog-discovered fallbacks so a
+ * rate-limited, retired, or harness-gated model doesn't dead-end the request.
+ * OpenRouter caps the list at 3.
+ */
+async function resolveOpenRouterModels(preferred) {
+  const pick = preferred && !RETIRED_MODEL_IDS.has(preferred) ? preferred : ''
+  // An explicitly-chosen paid model is used as-is; only free/auto needs discovery.
+  if (pick && !pick.endsWith(':free')) return [pick]
+
+  const catalog = await fetchModelCatalog()
+  const discovered = catalog
+    .filter(isUsableFreeModel)
+    .sort((a, b) => (b.top_provider?.context_length || 0) - (a.top_provider?.context_length || 0))
+    .map(m => m.id)
+
+  const head = pick ? [pick] : []
+  return [...head, ...discovered.filter(id => id !== pick)].slice(0, 3)
+}
+
 export const PROVIDERS = {
-  openrouter: { label: 'OpenRouter', defaultModel: 'openrouter/auto:free', oauth: true },
+  // Empty means "automatic": pick a usable free model from the live catalog at
+  // request time. A hard-coded slug rots as OpenRouter retires `:free` variants.
+  openrouter: { label: 'OpenRouter', defaultModel: '', oauth: true },
   github: { label: 'GitHub Models (free)', defaultModel: 'openai/gpt-4o-mini', keyPlaceholder: 'github_pat_… or ghp_…', keyUrl: 'https://github.com/settings/tokens' },
   openai: { label: 'OpenAI', defaultModel: 'gpt-4o-mini', keyPlaceholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
   claude: { label: 'Anthropic Claude', defaultModel: 'claude-haiku-4-5', keyPlaceholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/api-keys' },
@@ -85,7 +126,11 @@ export function setApiKey(key, provider = getProvider()) {
 }
 
 export function getModel(provider = getProvider()) {
-  return localStorage.getItem(modelStorageFor(provider)) || PROVIDERS[provider]?.defaultModel || 'gpt-4o-mini'
+  const stored = localStorage.getItem(modelStorageFor(provider))
+  if (stored) return stored
+  const fallback = PROVIDERS[provider]?.defaultModel
+  // '' is a meaningful default (automatic), so don't collapse it with ||.
+  return fallback === undefined ? 'gpt-4o-mini' : fallback
 }
 export function setModel(model, provider = getProvider()) {
   const k = modelStorageFor(provider)
@@ -159,14 +204,11 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
   let res
   if (provider === 'openrouter') {
-    // For free models, dynamically discover fallbacks from OpenRouter's catalog
-    // so we auto-route around rate-limited providers. Max 3 models per API limit.
-    let fallbacks
-    if (model.endsWith(':free')) {
-      const freeModels = await fetchFreeModels()
-      fallbacks = [model, ...freeModels.filter(m => m !== model)].slice(0, 3)
-    } else {
-      fallbacks = [model]
+    // Estimation posts a strict json_schema, so only offer models that declare
+    // structured-output support — otherwise OpenRouter filters them all out.
+    const fallbacks = await resolveOpenRouterModels(model)
+    if (fallbacks.length === 0) {
+      throw new Error('No free OpenRouter model currently supports structured nutrition output. Choose a model in Settings → Nutrition Estimation.')
     }
     res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -250,6 +292,13 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
   if (!res.ok) {
     const err = await res.text()
+    if (provider === 'openrouter' && (res.status === 404 || res.status === 403)) {
+      // The catalog we picked from has gone stale (model retired, or gated).
+      // Drop the cache so the next attempt re-discovers from a fresh catalog.
+      _freeModelsCache = null
+      _freeModelsCacheTime = 0
+      throw new Error(`OpenRouter could not run any of the models we offered (${res.status}). They may have been retired or restricted. Try again, or pick a model in Settings → Nutrition Estimation. Details: ${err}`)
+    }
     throw new Error(`${PROVIDERS[provider].label} API error (${res.status}): ${err}`)
   }
 
@@ -387,11 +436,10 @@ export async function getCoaching(ctx = {}) {
   try {
     let res
     if (provider === 'openrouter') {
-      let fallbacks = [model]
-      if (model.endsWith(':free')) {
-        const freeModels = await fetchFreeModels()
-        fallbacks = [model, ...freeModels.filter(m => m !== model)].slice(0, 3)
-      }
+      // Same capability-verified pool as estimation, so coaching can't land on
+      // a harness-gated model that would 403.
+      const fallbacks = await resolveOpenRouterModels(model)
+      if (fallbacks.length === 0) return null
       res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {

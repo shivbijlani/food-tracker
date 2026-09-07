@@ -90,7 +90,7 @@ export function NutritionSettings({ showOnlyOpenRouter = false }) {
                 <input
                   value={orModel}
                   onChange={e => setOrModel(e.target.value)}
-                  placeholder={llm.PROVIDERS.openrouter.defaultModel}
+                  placeholder="Automatic — best free model available"
                 />
                 <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
                   Leave blank for automatic (free). Or enter a specific model from <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">openrouter.ai/models</a>.
