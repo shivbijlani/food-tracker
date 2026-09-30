@@ -1248,6 +1248,11 @@ const STORAGE_META = {
   },
 }
 
+const CLOUD_LOCATION = {
+  onedrive: 'Apps/MealJot Food Tracker/',
+  'google-drive': 'private MealJot app data',
+}
+
 function OneDriveInfoPopover() {
   const [open, setOpen] = useState(false)
   return (
@@ -1274,6 +1279,11 @@ function OneDriveInfoPopover() {
           </p>
           <p style={{ margin: '0 0 0.5rem' }}>
             You can browse that folder from any device — phone, tablet, or another computer — just like any OneDrive folder.
+          </p>
+          <p style={{ margin: '0 0 0.5rem' }}>
+            Connecting Google Drive keeps your files in MealJot&apos;s private app space in your Google Drive. It
+            doesn&apos;t show up as a folder, but any device where you open MealJot and connect the same Google account
+            gets the same log.
           </p>
           <p style={{ margin: 0 }}>
             The files are plain text, so you can also ask Claude, Copilot, or any AI assistant to read or edit them for you.
@@ -1395,11 +1405,11 @@ function StorageAndSyncCard({ storageProvider, folderName }) {
         <OneDriveInfoPopover />
       </h3>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Connect OneDrive to use your food log on your phone, tablet, or any other computer.
+        Connect OneDrive or Google Drive to use your food log on your phone, tablet, or any other computer.
       </p>
       {providers.length === 0 && (
         <div className="muted" style={{ fontSize: '0.85rem' }}>
-          No cloud providers configured. Set <code>VITE_GOOGLE_CLIENT_ID</code> to enable Google Drive.
+          No cloud providers configured.
         </div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -1408,7 +1418,7 @@ function StorageAndSyncCard({ storageProvider, folderName }) {
             <div>
               <strong>{p.displayName}</strong>
               <div className="muted" style={{ fontSize: '0.75rem' }}>
-                {connected[p.id] ? 'Connected · Apps/MealJot Food Tracker/' : 'Not connected'}
+                {connected[p.id] ? `Connected · ${CLOUD_LOCATION[p.id] || p.displayName}` : 'Not connected'}
               </div>
             </div>
             <button className="btn btn-secondary" onClick={() => toggleProvider(p.id)} disabled={busy}>

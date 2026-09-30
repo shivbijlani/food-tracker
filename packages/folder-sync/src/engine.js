@@ -12,6 +12,7 @@ const CHANNEL = 'folder-sync'
 const META_STORE = 'meta'
 const INTENDED_KEY = 'folder-sync:intended-providers'
 const AUTO_RECONNECT_FLAG = 'folder-sync:auto-reconnected'
+const AUTO_RECONNECT_WINDOW_MS = 20_000
 
 function readIntended() {
   if (typeof localStorage === 'undefined') return new Set()
@@ -40,6 +41,20 @@ async function mirrorDelete(name) {
 async function mirrorRead(name) {
   const r = await idbGet(META_STORE, `local:${name}`)
   return r && !r.deleted ? r.content : null
+}
+
+// OAuth providers return either in the query (auth-code flow: ?code=&state=)
+// or in the fragment (token flow: #access_token=&state=). Returns the merged
+// params when the URL looks like an OAuth return, otherwise null.
+export function readOAuthRedirectParams(location) {
+  const params = new URLSearchParams(location.search || '')
+  const hash = (location.hash || '').replace(/^#/, '')
+  if (hash) {
+    for (const [k, v] of new URLSearchParams(hash)) params.set(k, v)
+  }
+  if (!params.has('state')) return null
+  if (!params.has('code') && !params.has('access_token') && !params.has('error')) return null
+  return params
 }
 
 export function createSyncEngine({ localAdapter, providers = [], redirectUri = (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '') }) {
@@ -106,7 +121,14 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
     if (!reg) return
     const sw = reg.active || reg.waiting || reg.installing
     if (!sw) return
-    const providerConfigs = providers.map(p => ({ id: p.id, clientId: p.clientId }))
+    // Only sync providers the user connected; an unconnected provider would
+    // otherwise report `reconnect-required` and flag the whole app as broken.
+    const intended = readIntended()
+    const active = []
+    for (const p of providers) {
+      if (intended.has(p.id) || await getTokens(p.id)) active.push(p)
+    }
+    const providerConfigs = active.map(p => ({ id: p.id, clientId: p.clientId }))
     sw.postMessage({ type: 'sync', reason, providers: providerConfigs })
   }
 
@@ -124,11 +146,12 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
     emit()
   }
 
-  // Handle OAuth redirect: if URL contains code+state and we recognise it, complete auth.
+  // Handle OAuth redirect: if URL contains state plus a code / token / error
+  // (query or fragment) and a provider recognises it, complete auth.
   async function maybeCompleteOAuthRedirect() {
     if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    if (!params.has('code') || !params.has('state')) return
+    const params = readOAuthRedirectParams(window.location)
+    if (!params) return
     for (const p of providers) {
       try {
         const ok = await p.completeAuth(params, redirectUri)
@@ -143,6 +166,13 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
         }
       } catch (e) {
         console.error(`[folder-sync] ${p.id} completeAuth failed:`, e)
+        // Don't leave tokens / errors sitting in the address bar.
+        window.history.replaceState({}, document.title, window.location.pathname)
+        // A declined / failed sign-in must not trigger an auto-reconnect loop.
+        removeIntended(p.id)
+        status = { ...status, error: e.message || String(e) }
+        emit()
+        return
       }
     }
   }
@@ -158,14 +188,19 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
   //   - returning from an OAuth redirect (URL has code/state),
   //   - the user voluntarily disconnected (provider not in intended set),
   //   - we already auto-redirected this session (avoid loops if the user
-  //     cancels the sign-in screen).
+  //     cancels the sign-in screen),
+  //   - the page has been in use for a while: short-lived tokens (Google's
+  //     last ~1h) must not navigate away mid-edit. Auto-redirect only right
+  //     after load or when the tab becomes visible again; otherwise the
+  //     status badge shows "Reconnect".
   let autoReconnectAttempted = false
+  let autoReconnectWindowUntil = Date.now() + AUTO_RECONNECT_WINDOW_MS
   function maybeAutoReconnect() {
     if (autoReconnectAttempted) return
+    if (Date.now() > autoReconnectWindowUntil) return
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return
     if (!navigator.onLine) return
-    const params = new URLSearchParams(window.location.search)
-    if (params.has('code') || params.has('state') || params.has('error')) return
+    if (readOAuthRedirectParams(window.location)) return
     const intended = readIntended()
     if (intended.size === 0) return
     for (const p of providers) {
@@ -187,7 +222,10 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => nudgeSW('online'))
     document.addEventListener?.('visibilitychange', () => {
-      if (document.visibilityState === 'visible') nudgeSW('visibility')
+      if (document.visibilityState === 'visible') {
+        autoReconnectWindowUntil = Date.now() + AUTO_RECONNECT_WINDOW_MS
+        nudgeSW('visibility')
+      }
     })
   }
 
