@@ -39,7 +39,7 @@ The app has two layers:
 
 **Cloud sync providers** — optional background sync targets:
 - OneDrive (pre-registered Azure app ID already in the code — no Azure setup needed)
-- Google Drive (requires `VITE_GOOGLE_CLIENT_ID` env var)
+- Google Drive (OAuth client from the "MealJot" Google Cloud project, set as `MEALJOT_GOOGLE_CLIENT_ID` in `storage.js`; `VITE_GOOGLE_CLIENT_ID` overrides it). Files live in the hidden `appDataFolder` (`drive.appdata` scope). Google requires a `client_secret` for auth-code exchange on Web clients even with PKCE, so the provider uses the OAuth token model (`response_type=token`, ~1h access token, no refresh token): on expiry the app silently re-runs sign-in right after load / when the tab regains focus, never mid-edit. Mocked end-to-end check: start `VITE_GOOGLE_CLIENT_ID=e2e-client npx vite --port 5199`, then `node scripts/e2e-google-drive-mock.mjs`.
 
 `storage.js` is the public facade. The app calls `storage.readFile()` / `storage.writeFile()` — it never talks to adapters directly. The sync engine lives in `packages/folder-sync/`.
 
