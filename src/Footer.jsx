@@ -23,6 +23,8 @@ export function Footer({ installButton = null }) {
         <a href={`${REPO_URL}/issues`} target="_blank" rel="noreferrer">Report an issue</a>
         <span aria-hidden="true">·</span>
         <a href={`${REPO_URL}/blob/main/LICENSE`} target="_blank" rel="noreferrer">MIT License</a>
+        <span aria-hidden="true">·</span>
+        <a href="/privacy.html">Privacy</a>
         {installButton && <span aria-hidden="true">·</span>}
         {installButton}
       </div>

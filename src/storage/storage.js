@@ -54,7 +54,8 @@ export function getProviderName(id) {
 // (consent screen branded MealJot; JS origins https://mealjot.com and
 // http://localhost:5173). VITE_GOOGLE_CLIENT_ID overrides it (e.g. forks).
 // While empty, Google Drive stays hidden from the sync UI.
-const MEALJOT_GOOGLE_CLIENT_ID = ''
+// Cloud project id: mealjot (owner shiv@bijlanis.com).
+const MEALJOT_GOOGLE_CLIENT_ID = '879894537945-c75k9m67sijjge8bhtv89nv1nbvqomnj.apps.googleusercontent.com'
 const ONEDRIVE_CLIENT_ID = import.meta.env?.VITE_ONEDRIVE_CLIENT_ID
   || '94f25f67-e08b-415e-b1aa-4159093d401d'
 const GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || MEALJOT_GOOGLE_CLIENT_ID
