@@ -9,11 +9,11 @@
   "scripts": {
     "predev": "node scripts/copy-sw.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/copy-sw.mjs",
+    "prebuild": "node scripts/copy-sw.mjs && node scripts/pack-tools.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run src packages/folder-sync && npm run test --workspace @shivbijlani/mealjot-tools",
     "copy:sw": "node scripts/copy-sw.mjs"
   },
   "dependencies": {

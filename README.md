@@ -4,6 +4,10 @@ A local-first food & nutrition tracker with mobile support. Your data lives as p
 
 ## Features
 
+- **Muse / agent tools** — suggestion-first food logging via a local CLI or
+  stdio MCP server, with direct conditional OneDrive writes and retry-safe IDs.
+  [Install, authentication prerequisites and tool contract](packages/food-tools/README.md).
+
 - **Two Modes**: Simple (protein-only tracking with progress bars) or Advanced (full nutrition tracking)
 - **Today** — at-a-glance progress vs. your daily goals (calories, protein, calcium, veg servings, omega-3).
 - **Add entry** — type what you ate; optionally let an LLM estimate the nutrition values, edit, and save.
@@ -23,9 +27,9 @@ A local-first food & nutrition tracker with mobile support. Your data lives as p
 
 ### 📱 OneDrive (Mobile + Desktop)
 - **How**: Files stored in your OneDrive (`/food-tracker/` folder)
-- **Where**: Synced across all your devices
+- **Where**: `Apps/MealJot Food Tracker/` in your OneDrive, synced across devices
 - **Pros**: Works on mobile, automatic backup, cross-device sync
-- **Cons**: Requires Azure app registration (one-time setup)
+- **Cons**: Requires Microsoft sign-in; the browser app registration is already configured
 
 **Mobile Setup**: See [MOBILE_SETUP.md](MOBILE_SETUP.md) for OneDrive configuration instructions.
 

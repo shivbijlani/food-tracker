@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { filterSuggestions } from './storage/suggestions.js'
 
 // Reusable autocomplete input/textarea. Suggestions are shown as a dropdown
 // that supports keyboard navigation (↑↓ to move, Enter to select, Esc to close).
@@ -24,9 +25,7 @@ export default function AutocompleteInput({
   const [activeIndex, setActiveIndex] = useState(-1)
   const containerRef = useRef(null)
 
-  const filtered = value.trim()
-    ? suggestions.filter(s => s.name.toLowerCase().includes(value.toLowerCase())).slice(0, 6)
-    : []
+  const filtered = filterSuggestions(suggestions, value)
 
   useEffect(() => {
     const handler = (e) => {

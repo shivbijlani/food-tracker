@@ -25,3 +25,5 @@ dist-ssr
 node_modules
 .playwright-mcp/
 public/folder-sync/
+public/food-tools/
+public/tools/
