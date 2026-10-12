@@ -7,14 +7,13 @@ import { Footer } from './Footer.jsx'
 import { PROTEIN_LOG_HEADERS, GOALS_HEADERS, RECIPE_HEADERS } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
-import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
+import { addLogEntries, updateEntryAt } from './storage/mergeEntry.js'
 import {
   SUGGESTIONS_FILE,
   parseSuggestions,
   serializeSuggestions,
   upsertSuggestion,
-  expandWithHalves,
-  recipeServingsCount,
+  composeSuggestions,
 } from './storage/suggestions.js'
 import { CoachingCard, useCoaching } from './Coaching.jsx'
 import * as llm from './llm.js'
@@ -236,10 +235,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
   }
 
   const addEntries = async (newEntries) => {
-    let nextLog = entries
-    for (const e of newEntries) {
-      nextLog = mergeEntry(nextLog, e, 'simple')
-    }
+    const nextLog = addLogEntries(entries, newEntries)
     await saveLog(nextLog)
 
     let nextSuggestions = suggestions
@@ -255,7 +251,7 @@ export default function SimpleMode({ storageReady, folderName, mode, setMode, st
     try {
       await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
     } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
+      setError(`Food logged, but suggestions could not be saved: ${e.message}`)
     }
   }
 
@@ -578,31 +574,7 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
 
   // Suggestions = suggestions.csv (food database) + recipes, with virtual
   // "Half X" variants for every item that has nutrition.
-  const suggestions = useMemo(() => {
-    let list = []
-    for (const r of recipes) {
-      if (!r.Recipe) continue
-      const servings = recipeServingsCount(r)
-      const perServing = (v) => {
-        const n = Number(v)
-        if (!isFinite(n) || n <= 0) return ''
-        return String(Math.round((n / servings) * 10) / 10).replace(/\.0$/, '')
-      }
-      list = upsertSuggestion(list, {
-        name: r.Recipe,
-        protein_g: perServing(r['Protein (g)']),
-        calories: perServing(r.Calories),
-      })
-    }
-    for (const s of suggestionsCsv) {
-      list = upsertSuggestion(list, s)
-    }
-    return expandWithHalves(list).map(s => ({
-      name: s.name,
-      protein: s.protein_g === '' ? null : num(s.protein_g),
-      calories: s.calories === '' ? null : num(s.calories),
-    }))
-  }, [recipes, suggestionsCsv])
+  const suggestions = useMemo(() => composeSuggestions(recipes, suggestionsCsv, 'simple'), [recipes, suggestionsCsv])
 
   const selectSuggestion = (s) => {
     setMeal(s.name)
@@ -860,5 +832,4 @@ function AddEntrySimple({ onAdd, defaultDate, onAfterSave, suggestions: suggesti
     </div>
   )
 }
-
 

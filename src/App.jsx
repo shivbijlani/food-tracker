@@ -10,14 +10,13 @@ import {
 } from './storage/markdown.js'
 import { readEntries, writeEntries } from './storage/mdyaml.js'
 import { currentMonthKey, entryFileName, listMonthFiles, groupByMonth } from './storage/monthly.js'
-import { mergeEntry, updateEntryAt } from './storage/mergeEntry.js'
+import { addLogEntries, updateEntryAt } from './storage/mergeEntry.js'
 import {
   SUGGESTIONS_FILE,
   parseSuggestions,
   serializeSuggestions,
   upsertSuggestion,
-  expandWithHalves,
-  expandRecipeServings,
+  composeSuggestions,
 } from './storage/suggestions.js'
 import * as llm from './llm.js'
 import * as openrouterAuth from './openrouter-auth.js'
@@ -337,11 +336,7 @@ export default function App() {
   }
 
   const addEntries = async (newEntries) => {
-    // 1. Update log (merging items that share Date+Meal)
-    let nextLog = logEntries
-    for (const e of newEntries) {
-      nextLog = mergeEntry(nextLog, e, 'advanced')
-    }
+    const nextLog = addLogEntries(logEntries, newEntries)
     await saveLog(nextLog)
 
     // 2. Update suggestions (tracking each item individually)
@@ -362,7 +357,7 @@ export default function App() {
     try {
       await storage.writeFile(SUGGESTIONS_FILE, serializeSuggestions(nextSuggestions))
     } catch (e) {
-      console.warn('Failed to persist suggestions.csv:', e)
+      setError(`Food logged, but suggestions could not be saved: ${e.message}`)
     }
   }
 
@@ -705,28 +700,7 @@ function AddEntry({ onAdd, recipes, defaultDate, suggestions: suggestionsCsv = [
 
   // Suggestions = recipes (as ½ / 1 / 2 serving variants) + suggestions.csv
   // (non-recipe items with a "Half X" virtual entry for each).
-  const suggestions = useMemo(() => {
-    const toItem = s => ({
-      name: s.name,
-      protein: num(s.protein_g),
-      calories: num(s.calories),
-      calcium_mg: num(s.calcium_mg),
-      veg_servings: num(s.veg_servings),
-      omega3: s.omega3 || 'N',
-    })
-
-    // Recipes → ½ serving, 1 serving, 2 servings
-    const recipeItems = expandRecipeServings(recipes).map(toItem)
-
-    // CSV items that aren't already covered by a recipe → expand with halves
-    const recipeNames = new Set(recipes.map(r => (r.Recipe || '').trim().toLowerCase()))
-    const nonRecipeCsv = suggestionsCsv.filter(
-      s => !recipeNames.has((s.name || '').trim().toLowerCase())
-    )
-    const csvItems = expandWithHalves(nonRecipeCsv).map(toItem)
-
-    return [...recipeItems, ...csvItems]
-  }, [recipes, suggestionsCsv])
+  const suggestions = useMemo(() => composeSuggestions(recipes, suggestionsCsv, 'advanced'), [recipes, suggestionsCsv])
 
   const selectSuggestion = (s) => {
     setDesc(s.name)
@@ -1481,7 +1455,6 @@ export function SettingsView({ folderName, storageProvider, mode, setMode }) {
     </>
   )
 }
-
 
 
 

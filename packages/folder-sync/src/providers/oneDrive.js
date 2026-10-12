@@ -9,6 +9,7 @@
 
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../auth/pkce.js'
 import { getTokens, setTokens, clearTokens, isExpired } from '../auth/tokenStore.js'
+import { oneDriveStore } from '../../../food-tools/src/onedrive.js'
 
 const PROVIDER_ID = 'onedrive'
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
@@ -19,7 +20,7 @@ const APPROOT = `${GRAPH_BASE}/me/drive/special/approot`
 
 /** Public factory called by consumers on the main thread. */
 export function oneDriveProvider({ clientId }) {
-  return {
+  const config = {
     id: PROVIDER_ID,
     displayName: 'OneDrive',
     clientId,
@@ -38,6 +39,10 @@ export function oneDriveProvider({ clientId }) {
     deleteRemote,
     refresh: (refreshToken) => refresh(clientId, refreshToken),
   }
+  const versioned = oneDriveStore({ getAccessToken: () => ensureToken(config) })
+  config.readVersioned = versioned.read
+  config.writeVersioned = versioned.write
+  return config
 }
 
 // ---- OAuth (main thread) ----

@@ -1,13 +1,14 @@
 // Service worker — drains the dirty-file queue and pulls remote changes.
 // Registered with `{ type: 'module' }`.  Chromium / latest Firefox / Safari 16+.
 
-import { peekAll, dequeue } from './queue.js'
+import { peekAll, dequeue, queueRevision, dequeueIfUnchanged } from './queue.js'
 import { getTokens } from './auth/tokenStore.js'
 import { idbGet, idbSet } from './idb.js'
 import { reconcileRecordsFile, isSidecarPath } from './records.js'
 import { oneDriveProvider } from './providers/oneDrive.js'
 import { googleDriveProvider } from './providers/googleDrive.js'
 import { mockProvider } from './providers/mock.js'
+import { mergeLogSnapshots } from '../../food-tools/src/logSync.js'
 
 const CHANNEL = 'folder-sync'
 const META_STORE = 'meta'
@@ -102,6 +103,16 @@ async function syncOneProvider(provider) {
   for (const name of dirty) {
     // Sidecars are sync metadata, not user data — never push them directly.
     if (isSidecarPath(name)) { await dequeue(name); continue }
+    if (isFoodLog(provider, name)) {
+      let drained = false
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const revision = await queueRevision(name)
+        await syncFoodLog(provider, name)
+        if (await dequeueIfUnchanged(name, revision)) { drained = true; break }
+      }
+      if (!drained) throw new Error('Food log kept changing locally. Retry sync; pending changes remain queued.')
+      continue
+    }
     const codec = RECORD_CODECS[name]
     if (codec) {
       // Record-level merge: deletions are carried as tombstones, so pushing
@@ -125,12 +136,17 @@ async function syncOneProvider(provider) {
   const remoteList = await provider.listRemote(provider)
   for (const item of remoteList) {
     if (isSidecarPath(item.name)) continue
+    if (isFoodLog(provider, item.name)) {
+      await syncFoodLog(provider, item.name)
+      continue
+    }
     const codec = RECORD_CODECS[item.name]
     if (codec) {
       await reconcileRecord(provider, item.name, codec)
       await setRemoteMtime(provider.id, item.name, item.mtime)
       continue
     }
+
     const lastSeen = await getRemoteMtime(provider.id, item.name)
     if (lastSeen && lastSeen >= item.mtime) continue
     const remoteContent = await provider.readRemote(provider, item.name)
@@ -139,6 +155,30 @@ async function syncOneProvider(provider) {
       await setRemoteMtime(provider.id, item.name, item.mtime)
     }
   }
+}
+
+function isFoodLog(provider, name) {
+  return provider.id === 'onedrive' && /^(entries|protein)-\d{4}-\d{2}\.md$/.test(name)
+}
+
+async function syncFoodLog(provider, name) {
+  const baseKey = `food-base:${provider.id}:${name}`
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [base, local, remote] = await Promise.all([
+      idbGet(META_STORE, baseKey), readLocal(name), provider.readVersioned(name),
+    ])
+    const merged = mergeLogSnapshots(base ?? null, local, remote.content, name.startsWith('protein-') ? 'simple' : 'advanced')
+    if (await readLocal(name) !== local) continue
+    if (merged !== remote.content && merged != null) {
+      try { await provider.writeVersioned(name, merged, remote) }
+      catch (e) { if (e.code === 'PRECONDITION_FAILED') continue; throw e }
+    }
+    await idbSet(META_STORE, baseKey, merged)
+    if (await readLocal(name) !== local) continue
+    if (merged !== local && merged != null) await writeLocal(name, merged)
+    return
+  }
+  throw new Error('Food log changed during sync. Retry; no stale overwrite was made.')
 }
 
 // Record-level reconcile for one file, symmetric across push and pull: parses

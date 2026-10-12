@@ -1,0 +1,12 @@
+{
+  "name": "@shivbijlani/mealjot-tools",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Suggestion-first MealJot CLI and stdio MCP tools with conditional OneDrive writes.",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "bin": { "mealjot": "./bin/mealjot.js" },
+  "exports": { ".": "./src/tools.js", "./suggestions": "./src/suggestions.js", "./planner": "./src/planner.js" },
+  "files": ["bin", "src", "test", "README.md"],
+  "scripts": { "test": "node --test test/*.node.mjs" }
+}
