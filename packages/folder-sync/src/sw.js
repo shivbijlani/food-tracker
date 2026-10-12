@@ -85,7 +85,7 @@ async function runSync(reason) {
         ? 'reconnect-required'
         : states.every(s => s === 'synced')
           ? 'synced'
-          : 'idle'
+          : states.includes('error') ? 'error' : 'idle'
       await broadcast({ state: overall, lastSync: Date.now(), providers: providerStatuses, reason })
     } finally {
       inFlight = null

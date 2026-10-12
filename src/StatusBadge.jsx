@@ -8,7 +8,8 @@ import { SettingsButton } from './SettingsButton.jsx'
 export function StatusBadge({ folderName, syncStatus, mode, setMode, storageProvider }) {
   const state = syncStatus?.state || 'idle'
   const anyReconnect = state === 'reconnect-required'
-    || Object.values(syncStatus?.providers || {}).some(p => p?.needsReconnect)
+    || Object.values(syncStatus?.providers || {}).some(p => p?.needsReconnect || p?.state === 'reconnect-required')
+  const providerError = Object.values(syncStatus?.providers || {}).find(p => p?.state === 'error')?.error
 
   // Browser Storage is the obvious/default — don't surface it in the pill.
   const isBrowserStorage = storageProvider === 'browser-storage' || !storageProvider
@@ -18,6 +19,8 @@ export function StatusBadge({ folderName, syncStatus, mode, setMode, storageProv
   let dot, label, srLabel
   if (anyReconnect) {
     dot = '#e11d48'; label = 'Reconnect'; srLabel = 'Cloud reconnect needed — click to open settings'
+  } else if (state === 'error' || providerError) {
+    dot = '#e11d48'; label = 'Sync error'; srLabel = `Cloud sync failed: ${providerError || syncStatus?.error || 'Open settings to retry'}`
   } else if (state === 'syncing') {
     dot = '#3b82f6'; label = 'Syncing…'; srLabel = 'Syncing to cloud'
   } else if (state === 'offline') {

@@ -74,8 +74,18 @@ try {
     const puts = graph.requests.filter(r => r.method === 'PUT')
     assert.ok(puts.some(r => r.headers['If-Match'] === '1'))
     assert.ok(puts.some(r => r.headers['If-Match'] === '2'))
+    await page.getByRole('button', { name: 'Synced to cloud', exact: true }).waitFor()
+    await context.route('https://graph.microsoft.com/**', route => route.fulfill({ status: 403, body: '{}' }))
+    await page.evaluate(async () => {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      regs.find(r => r.scope.includes('/folder-sync/')).active.postMessage({
+        type: 'sync', reason: 'synthetic-access-denied',
+        providers: [{ id: 'onedrive', clientId: '94f25f67-e08b-415e-b1aa-4159093d401d' }],
+      })
+    })
+    await page.getByRole('button', { name: /Cloud sync failed/ }).waitFor()
     assert.deepEqual(errors, [])
-    console.log(`${mode}: UI saved shared suggestion, stable ID survived reload, worker freshly merged forced 412 and concurrent food.`)
+    console.log(`${mode}: UI saved shared suggestion, stable ID survived reload, worker merged forced 412/concurrent food and surfaced access-denied sync error.`)
     await context.close()
   }
 } finally {
