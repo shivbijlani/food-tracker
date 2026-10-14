@@ -272,7 +272,15 @@ export default function App() {
       // Subscribe to sync engine status + reload on remote updates.
       // Debounced because the engine fires one `lastRemoteUpdate` per file —
       // a sync that pulls down N files would otherwise trigger N reloads.
-      const debouncedReload = debounce(() => loadAll(), 150)
+      // On a new device the first cloud pull lands after startup detection,
+      // so re-detect the mode until the user has chosen one explicitly.
+      const debouncedReload = debounce(async () => {
+        if (!localStorage.getItem(MODE_KEY)) {
+          const detected = await detectModeFromData()
+          if (detected) { switchMode(detected); return }
+        }
+        loadAll()
+      }, 150)
       try {
         const eng = getEngine()
         const unsub = eng.subscribe((s) => {
