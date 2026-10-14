@@ -24,6 +24,7 @@ const preparationSchema = {
         properties: { query: { type: 'string' }, options: { type: 'array', items: { type: 'object' } } },
       },
     },
+    savedFoods: { type: 'array', items: { type: 'object' } },
   },
 }
 export const TOOL_DEFINITIONS = [
@@ -47,8 +48,9 @@ export const TOOL_DEFINITIONS = [
           type: 'object', additionalProperties: false, required: ['quantity'],
           properties: {
             optionId: { type: 'string' }, quantity: { type: 'number', exclusiveMinimum: 0, maximum: 1000 },
-            newFood: { type: 'object', additionalProperties: false, required: ['name', 'nutritionStatus'],
-              properties: { name: { type: 'string' }, nutritionStatus: { type: 'string', enum: ['unknown', 'estimated', 'provided'] },
+            newFood: { type: 'object', additionalProperties: false, required: ['name', 'nutritionStatus', 'nutrition'],
+              description: 'A food with no matching option. You (the calling model) estimate its nutrition: always include nutrition.protein_g as your best estimate for the portion and set nutritionStatus "estimated" unless the user supplied the numbers.',
+              properties: { name: { type: 'string' }, nutritionStatus: { type: 'string', enum: ['estimated', 'provided'] },
                 nutrition,
               } },
           },
