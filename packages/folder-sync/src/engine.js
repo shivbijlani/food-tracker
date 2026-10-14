@@ -57,7 +57,7 @@ export function readOAuthRedirectParams(location) {
   return params
 }
 
-export function createSyncEngine({ localAdapter, providers = [], redirectUri = (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '') }) {
+export function createSyncEngine({ localAdapter, providers = [], pollIntervalMs = 60_000, redirectUri = (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '') }) {
   if (!localAdapter) throw new Error('createSyncEngine: localAdapter is required')
 
   const providerMap = new Map(providers.map(p => [p.id, p]))
@@ -218,9 +218,17 @@ export function createSyncEngine({ localAdapter, providers = [], redirectUri = (
     }
   }
 
-  // Periodic + event-driven nudges
+  // Periodic + event-driven nudges. Other writers (another device, or an
+  // agent using the MealJot tools) change cloud files while this tab stays
+  // open and visible, so poll for remote changes while the page is visible.
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => nudgeSW('online'))
+    window.addEventListener('focus', () => nudgeSW('focus'))
+    if (pollIntervalMs > 0) {
+      setInterval(() => {
+        if (document.visibilityState === 'visible' && navigator.onLine !== false) nudgeSW('poll')
+      }, pollIntervalMs)
+    }
     document.addEventListener?.('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         autoReconnectWindowUntil = Date.now() + AUTO_RECONNECT_WINDOW_MS
