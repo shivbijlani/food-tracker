@@ -117,24 +117,24 @@ export async function initStorage() {
 export async function detectModeFromData() {
   try {
     const files = await _engine.listFiles()
-    const entryFiles = files
-      .filter(n => /^entries-\d{4}-\d{2}\.md$/.test(n))
-      .sort()
-      .reverse() // newest first
+    // Simple mode logs to protein-YYYY-MM.md, advanced to entries-YYYY-MM.md
+    // (older simple data may live in entries files tagged `mode: simple`).
+    // Newest month with data wins; ties go to protein files.
+    const logFiles = files
+      .map(n => n.match(/^(entries|protein)-(\d{4}-\d{2})\.md$/))
+      .filter(Boolean)
+      .sort((a, b) => b[2].localeCompare(a[2]) || (a[1] === 'protein' ? -1 : 1))
 
-    if (!entryFiles.length) return null
-
-    // Read up to the 2 most recent files to find a mode hint.
-    for (const name of entryFiles.slice(0, 2)) {
+    for (const [name, kind] of logFiles.slice(0, 4)) {
       const text = await _engine.readFile(name)
       if (!text) continue
+      const dataRows = text.split('\n').filter(l => l.startsWith('|') && !/^[|\s:-]+$/.test(l)).length - 1
+      if (dataRows < 1) continue
+      if (kind === 'protein') return 'simple'
       // Quick frontmatter peek — don't import full parser to avoid circular deps.
-      const m = text.match(/^---\s*\n([\s\S]*?)\n---/m)
-      if (!m) continue
-      const modeMatch = m[1].match(/^mode:\s*(\S+)/m)
-      const rowMatch = text.match(/^\|[^|]+\|/m) // any data rows?
-      const hasData = rowMatch && text.split('\n').filter(l => l.startsWith('|') && !l.match(/^[| -]+$/)).length > 2
-      if (modeMatch && hasData) return modeMatch[1] === 'simple' ? 'simple' : 'advanced'
+      const fm = text.match(/^---\s*\n([\s\S]*?)\n---/m)
+      const modeMatch = fm && fm[1].match(/^mode:\s*(\S+)/m)
+      return modeMatch && modeMatch[1] === 'simple' ? 'simple' : 'advanced'
     }
 
     // Fallback: presence of systems.md → simple mode had data

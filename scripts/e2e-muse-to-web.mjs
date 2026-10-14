@@ -48,7 +48,9 @@ const sync = page => page.evaluate(async clientId => {
 }, CLIENT_ID)
 
 try {
-  for (const mode of ['simple', 'advanced']) {
+  // 'fresh': a new device with no mode chosen yet must pick up simple mode from OneDrive data.
+  for (const variant of ['simple', 'advanced', 'fresh']) {
+    const mode = variant === 'fresh' ? 'simple' : variant
     const file = `${mode === 'simple' ? 'protein' : 'entries'}-${today.slice(0, 7)}.md`
     const headers = mode === 'simple' ? PROTEIN_LOG_HEADERS : DAILY_LOG_HEADERS
     const graph = mockGraph()
@@ -56,13 +58,13 @@ try {
     graph.files.set(file, writeEntries('', headers, [{ Date: today, Meal: mode === 'simple' ? 'Website toast' : 'Breakfast', 'Food Description': 'Website toast', 'Protein (g)': '5', Id: 'web-1' }], { kind: 'entries', mode, period: today.slice(0, 7) }))
     const context = await browser.newContext()
     await wireGraph(context, graph)
-    await context.addInitScript(({ mode, foods, recipes }) => {
+    await context.addInitScript(({ mode, fresh, foods, recipes }) => {
       if (localStorage.getItem('synthetic-seed')) return
       localStorage.setItem('synthetic-seed', '1')
-      localStorage.setItem('mealjot-mode', mode)
+      if (!fresh) localStorage.setItem('mealjot-mode', mode)
       localStorage.setItem('ft-file:suggestions.csv', foods)
       localStorage.setItem('ft-file:recipes.md', recipes)
-    }, { mode, foods: FOODS, recipes: RECIPES })
+    }, { mode, fresh: variant === 'fresh', foods: FOODS, recipes: RECIPES })
     const page = await context.newPage()
     await page.clock.install()
     const errors = []
@@ -77,6 +79,7 @@ try {
     })
     await sync(page)
     await page.getByText('Website toast').first().waitFor({ timeout: 15000 })
+    assert.equal(await page.evaluate(() => localStorage.getItem('mealjot-mode')), mode)
     assert.equal(await page.getByText('Greek yogurt').count(), 0, 'Greek yogurt visible before Muse logged it')
 
     // Muse logs a food through the released tools against the same OneDrive.
@@ -106,7 +109,7 @@ try {
     assert.ok(rows.some(r => (r['Food Description'] || r.Meal) === 'Greek yogurt'))
     assert.ok(rows.some(r => r.Id === 'web-1'))
     assert.deepEqual(errors, [])
-    console.log(`${mode}: Muse-logged food appeared on the website (live sync + reload).`)
+    console.log(`${variant}: Muse-logged food appeared on the website (live sync + reload).`)
     await context.close()
   }
 } finally {
