@@ -65,7 +65,11 @@ export function mockGraph({ forceConflict = false } = {}) {
     }
     const name = decodeURIComponent(url.split('approot:/')[1]?.split('?')[0] || '')
     if (!files.has(name)) return response({}, 404)
-    return response({ id: name, eTag: String(versions.get(name)), '@microsoft.graph.downloadUrl': `https://download.test/${encodeURIComponent(name)}` })
+    // Real Graph only honors the download URL in $select as `content.downloadUrl`.
+    const select = new URL(url).searchParams.get('$select')
+    const item = { id: name, eTag: String(versions.get(name)) }
+    if (!select || select.split(',').includes('content.downloadUrl')) item['@microsoft.graph.downloadUrl'] = `https://download.test/${encodeURIComponent(name)}`
+    return response(item)
   }
   return { fetchImpl, files, requests }
 }

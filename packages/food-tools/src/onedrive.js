@@ -27,7 +27,7 @@ export function oneDriveStore({ getAccessToken, fetchImpl = fetch }) {
   async function readOnce(name) {
       // The download URL belongs to this exact immutable item version. Do not
       // fetch /content separately after reading metadata (a version race).
-      const response = await request(`${path(name)}?$select=id,eTag,name,@microsoft.graph.downloadUrl`)
+      const response = await request(`${path(name)}?$select=id,eTag,name,content.downloadUrl`)
       if (response.status === 404) return { content: null, etag: null, id: null }
       const item = await response.json()
       if (!item.eTag || !item.id || !item['@microsoft.graph.downloadUrl']) throw new ToolError('INVALID_RESPONSE', 'OneDrive did not return versioned file metadata.')
