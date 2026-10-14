@@ -48,7 +48,7 @@ export async function planTool({ tool, arguments: args = {}, snapshots = {} }) {
         state: 'read_required',
         reads: [...missing].map(filename => ({
           filename, method: 'GET', url: `${ROOT}:/${encodeURIComponent(filename)}`,
-          select: ['id', 'eTag', '@microsoft.graph.downloadUrl'],
+          select: ['id', 'eTag', 'content.downloadUrl'],
           instructions: 'Fetch metadata and content through the secure Graph broker. Recheck item ID/eTag after download; discard/retry if changed. Never send Graph Authorization to a download host. Supply matching content/id/etag, or nulls only after a confirmed 404.',
         })),
       }
