@@ -48,16 +48,24 @@ export async function prepareFoodLog(store, { items, mode = 'advanced' }) {
   requireValue(Array.isArray(items) && items.length > 0 && items.length <= 50 &&
     items.every(q => typeof q === 'string' && q.trim() && q.length <= 500), 'Provide 1-50 nonempty item descriptions.')
   const cat = await catalog(store, mode)
+  const toOption = s => ({
+    optionId: s.optionId, name: s.name, source: s.source,
+    nutrition: Object.fromEntries([...Object.keys(fields), 'omega3'].map(k => [k, s[k] ?? ''])),
+  })
   return {
     apiVersion: 1, mode, catalogRevision: cat.revision,
-    items: items.map(query => ({
-      query,
-      options: filterSuggestions(cat.items, query, 30).map(s => ({
-        optionId: s.optionId, name: s.name, source: s.source,
-        nutrition: Object.fromEntries([...Object.keys(fields), 'omega3'].map(k => [k, s[k] ?? ''])),
-      })),
+    items: items.map(query => {
+      const options = filterSuggestions(cat.items, query, 30).map(toOption)
+      return options.length ? { query, options } : {
+        query, options,
+        hint: 'No saved food matched this text. Check savedFoods: if one is the same food, select its optionId and scale quantity; otherwise estimate protein_g yourself for this exact portion (calibrate against similar savedFoods) and log it as newFood with nutritionStatus "estimated".',
+      }
+    }),
+    savedFoods: cat.items.filter(s => s.name === s.source.name || !/^half\s+/i.test(s.name)).slice(0, 500).map(s => ({
+      optionId: s.optionId, name: s.name,
+      nutrition: Object.fromEntries([...Object.keys(fields), 'omega3'].filter(k => s[k] !== '' && s[k] != null).map(k => [k, s[k]])),
     })),
-    guidance: 'Choose an existing option only if it is the right food and portion. quantity multiplies the selected portion. If no option fits, explicitly use newFood; unknown nutrition stays blank. Do not replace saved nutrition.',
+    guidance: 'Prefer saved foods: if an item\'s options or savedFoods contain the same food in a different amount, select its optionId and compute quantity as described portion / saved portion (e.g. "1.5oz chicken" with saved "1oz Rotisserie chicken" -> quantity 1.5; "half a shake" -> 0.5). The saved nutrition is then scaled for you. Only if no saved food is the same food, use newFood and estimate the nutrition yourself: you are the estimator, so reason from the described food and portion, calibrating against similar savedFoods (the user\'s own portions and values) and typical USDA values, to a best-guess protein_g, and set nutritionStatus "estimated". Never leave protein blank or ask the user for numbers just because the food is new; other fields may stay blank. Do not replace saved nutrition.',
   }
 }
 
@@ -85,17 +93,22 @@ function selectedRows(preparation, selections, date, meal, operationId) {
     requireValue(Boolean(optionId) !== Boolean(newFood), 'Select exactly one optionId or explicit newFood.')
     let name, nutrition, note
     if (optionId) {
-      const option = preparation.items[i].options.find(o => o.optionId === optionId)
-      requireValue(option, `Item ${i + 1}: optionId must come from its preparation options.`)
+      const option = preparation.items[i].options.find(o => o.optionId === optionId) ||
+        preparation.savedFoods.find(o => o.optionId === optionId)
+      requireValue(option, `Item ${i + 1}: optionId must come from its options or savedFoods.`)
+      requireValue(preparation.mode !== 'simple' || (option.nutrition.protein_g !== '' && option.nutrition.protein_g != null),
+        `Item ${i + 1}: saved food "${option.name}" has no protein value. Log it as newFood with your own protein_g estimate (nutritionStatus "estimated") instead.`)
       name = option.name
       nutrition = option.nutrition
-      note = `Saved nutrition; source ${option.source.file}: ${option.source.name}`
+      note = option.source ? `Saved nutrition; source ${option.source.file}: ${option.source.name}` : `Saved nutrition; source ${option.optionId.split(':')[0]}: ${name}`
     } else {
       requireValue(typeof newFood.name === 'string' && newFood.name.trim() && newFood.name.length <= 500 &&
         !/[\r\n|]/.test(newFood.name), 'newFood.name must be a nonempty single-line food name.')
-      requireValue(['unknown', 'estimated', 'provided'].includes(newFood.nutritionStatus), 'newFood requires nutritionStatus: unknown, estimated or provided.')
+      requireValue(['estimated', 'provided'].includes(newFood.nutritionStatus), 'newFood requires nutritionStatus "estimated" or "provided". If the user gave no numbers, estimate them yourself and use "estimated".')
       nutrition = newFood.nutrition || {}
-      requireValue(newFood.nutritionStatus !== 'unknown' || Object.values(nutrition).every(v => v == null || v === ''), 'Unknown nutrition must not contain values.')
+      const protein = nutrition.protein_g
+      requireValue((typeof protein === 'number' || (typeof protein === 'string' && protein.trim())) &&
+        Number.isFinite(Number(protein)) && Number(protein) >= 0, 'newFood requires nutrition.protein_g. Estimate it yourself from the food and portion (typical USDA values), set nutritionStatus "estimated", and retry.')
       name = newFood.name.trim()
       note = `New food; nutrition ${newFood.nutritionStatus}; not added to saved catalog`
     }

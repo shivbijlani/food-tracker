@@ -162,14 +162,21 @@ and enabling it alone would not solve Muse's process-injection limitation.
    `known`, `unknownEntries` and `complete`; unknown is never presented as a
    known zero.
 
-For a genuinely new food, explicitly select:
+For a genuinely new food, first check `savedFoods` in the preparation (the
+user's whole saved catalog, sent so the model can see every saved food, not
+only text matches). If one is the same food, select its `optionId` and scale
+`quantity` (e.g. "1.5oz chicken" with saved "1oz Rotisserie chicken" → 1.5).
+Otherwise estimate the nutrition yourself — the calling model is the
+estimator, calibrating against similar `savedFoods` — and explicitly select:
 
 ```json
-{ "quantity": 1, "newFood": { "name": "Uncatalogued food", "nutritionStatus": "unknown" } }
+{ "quantity": 1, "newFood": { "name": "1.5oz chicken in butter chicken", "nutritionStatus": "estimated", "nutrition": { "protein_g": 11 } } }
 ```
 
-Or supply nonnegative `nutrition` values with `nutritionStatus: "estimated"` or
-`"provided"`. Estimates are labeled in Notes. Saved-option nutrition is always
+`nutrition.protein_g` is required for every new food; use
+`nutritionStatus: "provided"` only when the user gave the numbers. A blank
+protein would silently undercount the day, so the tool rejects it and asks the
+caller to estimate and retry. Other fields may stay blank. Estimates are labeled in Notes. Saved-option nutrition is always
 reloaded from the catalog, never trusted from model-supplied preparation values.
 New foods are logged but **not automatically added to suggestions.csv**: this
 avoids silently changing catalog nutrition or claiming a multi-file transaction.

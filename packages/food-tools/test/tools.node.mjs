@@ -85,16 +85,38 @@ test('stale and tampered preparation cannot override saved nutrition', async () 
   await assert.rejects(tools.commit_food_log({ ...args(prep), operationId: 'advanced:2026-10-12:new-operation' }), { code: 'STALE_PREPARATION' })
 })
 
-test('new food is explicit, unknown stays unknown, estimates are labeled, catalog unchanged', async () => {
+test('new food requires a protein estimate, estimates are labeled, catalog unchanged', async () => {
   const store = new MemoryStore(), tools = createTools(store)
-  const prep = await tools.prepare_food_log({ items: ['Mystery food', 'Estimated food'] })
+  const prep = await tools.prepare_food_log({ items: ['Provided food', 'Estimated food'] })
   const request = { ...args({ ...prep, items: [] }), preparation: prep, selections: [
-    { newFood: { name: 'Mystery food', nutritionStatus: 'unknown' }, quantity: 1 },
+    { newFood: { name: 'Provided food', nutritionStatus: 'provided', nutrition: { protein_g: 0 } }, quantity: 1 },
     { newFood: { name: 'Estimated food', nutritionStatus: 'estimated', nutrition: { protein_g: 5 } }, quantity: 2 },
   ] }
+  for (const bad of [
+    { name: 'Mystery food', nutritionStatus: 'unknown' },
+    { name: 'Mystery food', nutritionStatus: 'estimated' },
+    { name: 'Mystery food', nutritionStatus: 'estimated', nutrition: { calories: 100 } },
+    { name: 'Mystery food', nutritionStatus: 'estimated', nutrition: { protein_g: '' } },
+  ]) await assert.rejects(tools.commit_food_log({ ...request, operationId: 'advanced:2026-10-12:no-protein', selections: [{ newFood: bad, quantity: 1 }, request.selections[1]] }), { code: 'INVALID_INPUT' })
+  assert.equal(store.files.has('entries-2026-10.md'), false)
+  assert.match(prep.items[0].hint, /estimate protein_g yourself/)
+  assert.ok(['Apple', 'Greek yogurt'].every(n => prep.savedFoods.some(f => f.name === n)))
+  assert.ok(!prep.savedFoods.some(f => f.name === 'Half Greek yogurt'))
+  const viaSaved = await tools.prepare_food_log({ items: ['1.5 cups strained yoghurt'] })
+  assert.equal(viaSaved.items[0].options.length, 0)
+  const yogurt = viaSaved.savedFoods.find(f => f.name === 'Greek yogurt')
+  yogurt.nutrition.protein_g = 999
+  const viaArgs = { preparation: viaSaved, date: '2026-10-13', meal: 'Snack', operationId: 'advanced:2026-10-13:via-saved-foods' }
+  await tools.commit_food_log({ ...viaArgs, selections: [{ optionId: yogurt.optionId, quantity: 1.5 }] })
+  assert.equal((await tools.get_day({ date: '2026-10-13' })).totals.protein_g.known, 30)
+  await assert.rejects(tools.commit_food_log({ ...viaArgs, operationId: 'advanced:2026-10-13:bogus-option', selections: [{ optionId: 'suggestions.csv:nope', quantity: 1 }] }), { code: 'INVALID_INPUT' })
+  const simplePrep = await tools.prepare_food_log({ mode: 'simple', items: ['Apple'] })
+  const apple = simplePrep.savedFoods.find(f => f.name === 'Apple')
+  await assert.rejects(tools.commit_food_log({ preparation: simplePrep, date: '2026-10-13', meal: 'Snack', operationId: 'simple:2026-10-13:apple-no-protein', selections: [{ optionId: apple.optionId, quantity: 1 }] }),
+    e => e.code === 'INVALID_INPUT' && /no protein value/.test(e.message))
   await tools.commit_food_log(request)
   const day = await tools.get_day({ date: request.date })
-  assert.deepEqual(day.totals.protein_g, { known: 10, unknownEntries: 1, complete: false })
+  assert.deepEqual(day.totals.protein_g, { known: 10, unknownEntries: 0, complete: true })
   assert.ok(day.entries[0].Notes.includes('estimated'))
   assert.equal(store.files.get('suggestions.csv'), FOODS)
   await assert.rejects(tools.commit_food_log({ ...request, operationId: 'advanced:2026-10-12:invalid-new', selections: [{ quantity: 1 }, request.selections[1]] }), { code: 'INVALID_INPUT' })
