@@ -145,6 +145,9 @@ test('UI cloud sync three-way merge preserves agent additions and receipts, appl
   const right = writeEntries(base, DAILY_LOG_HEADERS, [{ ...CONCURRENT, Meal: 'Snack' }])
   assert.throws(() => mergeLogSnapshots(base, left, right, 'advanced'), { code: 'SYNC_CONFLICT' })
   assert.equal(mergeLogSnapshots(null, null, base, 'advanced'), base)
+  // No shared base (first sync with a stale copy): this device's row wins, the other copy's extra rows are kept.
+  const firstSync = readEntries(mergeLogSnapshots(null, left, writeEntries(base, DAILY_LOG_HEADERS, [{ ...CONCURRENT, Meal: 'Snack' }, { ...CONCURRENT, Id: 'other' }]), 'advanced'), DAILY_LOG_HEADERS)
+  assert.deepEqual(firstSync.rows.map(r => [r.Id, r.Meal]).sort(), [[CONCURRENT.Id, 'Dinner'], ['other', CONCURRENT.Meal]].sort())
 })
 
 test('Graph store conditional create/write, forced 412, fresh metadata, no bearer forwarded to download', async () => {

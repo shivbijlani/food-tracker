@@ -1,10 +1,11 @@
 // Service worker — drains the dirty-file queue and pulls remote changes.
 // Registered with `{ type: 'module' }`.  Chromium / latest Firefox / Safari 16+.
 
-import { peekAll, dequeue, queueRevision, dequeueIfUnchanged } from './queue.js'
+import { peekAll, queueRevision, dequeueIfUnchanged } from './queue.js'
 import { getTokens } from './auth/tokenStore.js'
-import { idbGet, idbSet } from './idb.js'
+import { idbGet, idbSet, idbKeys, idbReplaceIf } from './idb.js'
 import { reconcileRecordsFile, isSidecarPath } from './records.js'
+import { syncProviderFiles } from './fileSync.js'
 import { oneDriveProvider } from './providers/oneDrive.js'
 import { googleDriveProvider } from './providers/googleDrive.js'
 import { mockProvider } from './providers/mock.js'
@@ -66,6 +67,8 @@ async function runSync(reason) {
         return
       }
       const providerStatuses = {}
+      const revisions = []
+      for (const name of await peekAll()) revisions.push([name, await queueRevision(name)])
       for (const p of currentProviders) {
         try {
           await syncOneProvider(p)
@@ -80,6 +83,7 @@ async function runSync(reason) {
           console.error(`[folder-sync sw] ${p.id} sync error:`, e)
         }
       }
+      if (Object.values(providerStatuses).every(s => s.state === 'synced')) await drainQueue(revisions)
       const states = Object.values(providerStatuses).map(s => s.state)
       const overall = states.includes('reconnect-required')
         ? 'reconnect-required'
@@ -94,91 +98,34 @@ async function runSync(reason) {
   return inFlight
 }
 
+// Every provider syncs every file against its *own* merge base, so a provider
+// that was offline or stale cannot overwrite data another provider already
+// delivered. The dirty queue only says "something changed"; it is cleared once
+// every provider has synced.
 async function syncOneProvider(provider) {
   const tok = await getTokens(provider.id)
   if (!tok) throw new Error('reconnect-required')
 
-  // 1) Push: drain queue.
-  const dirty = await peekAll()
-  for (const name of dirty) {
-    // Sidecars are sync metadata, not user data — never push them directly.
-    if (isSidecarPath(name)) { await dequeue(name); continue }
-    if (isFoodLog(provider, name)) {
-      let drained = false
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const revision = await queueRevision(name)
-        await syncFoodLog(provider, name)
-        if (await dequeueIfUnchanged(name, revision)) { drained = true; break }
-      }
-      if (!drained) throw new Error('Food log kept changing locally. Retry sync; pending changes remain queued.')
-      continue
-    }
-    const codec = RECORD_CODECS[name]
-    if (codec) {
-      // Record-level merge: deletions are carried as tombstones, so pushing
-      // can never resurrect a row another device deleted.
-      await reconcileRecord(provider, name, codec)
-      await dequeue(name)
-      continue
-    }
-    const localContent = await readLocal(name)
-    if (localContent === null) {
-      // local was deleted
-      await provider.deleteRemote(provider, name)
-    } else {
-      const res = await provider.writeRemote(provider, name, localContent)
-      await setRemoteMtime(provider.id, name, res.mtime)
-    }
-    await dequeue(name)
+  for (const [name, codec] of Object.entries(RECORD_CODECS)) {
+    // Record-level merge: deletions are carried as tombstones, so pushing
+    // can never resurrect a row another device deleted.
+    await reconcileRecord(provider, name, codec)
   }
 
-  // 2) Pull: list remote, compare mtimes, download newer.
-  const remoteList = await provider.listRemote(provider)
-  for (const item of remoteList) {
-    if (isSidecarPath(item.name)) continue
-    if (isFoodLog(provider, item.name)) {
-      await syncFoodLog(provider, item.name)
-      continue
-    }
-    const codec = RECORD_CODECS[item.name]
-    if (codec) {
-      await reconcileRecord(provider, item.name, codec)
-      await setRemoteMtime(provider.id, item.name, item.mtime)
-      continue
-    }
-
-    const lastSeen = await getRemoteMtime(provider.id, item.name)
-    if (lastSeen && lastSeen >= item.mtime) continue
-    const remoteContent = await provider.readRemote(provider, item.name)
-    if (remoteContent != null) {
-      await writeLocal(item.name, remoteContent)
-      await setRemoteMtime(provider.id, item.name, item.mtime)
-    }
-  }
+  await syncProviderFiles(provider, {
+    readLocal: readLocalRecord,
+    replaceLocal,
+    listLocal: listLocalNames,
+    getMeta: key => idbGet(META_STORE, key),
+    setMeta: (key, value) => idbSet(META_STORE, key, value),
+    mergeFoodLog: (base, local, remote, name) =>
+      mergeLogSnapshots(base, local, remote, name.startsWith('protein-') ? 'simple' : 'advanced'),
+    skip: name => isSidecarPath(name) || !!RECORD_CODECS[name],
+  })
 }
 
-function isFoodLog(provider, name) {
-  return provider.id === 'onedrive' && /^(entries|protein)-\d{4}-\d{2}\.md$/.test(name)
-}
-
-async function syncFoodLog(provider, name) {
-  const baseKey = `food-base:${provider.id}:${name}`
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const [base, local, remote] = await Promise.all([
-      idbGet(META_STORE, baseKey), readLocal(name), provider.readVersioned(name),
-    ])
-    const merged = mergeLogSnapshots(base ?? null, local, remote.content, name.startsWith('protein-') ? 'simple' : 'advanced')
-    if (await readLocal(name) !== local) continue
-    if (merged !== remote.content && merged != null) {
-      try { await provider.writeVersioned(name, merged, remote) }
-      catch (e) { if (e.code === 'PRECONDITION_FAILED') continue; throw e }
-    }
-    await idbSet(META_STORE, baseKey, merged)
-    if (await readLocal(name) !== local) continue
-    if (merged !== local && merged != null) await writeLocal(name, merged)
-    return
-  }
-  throw new Error('Food log changed during sync. Retry; no stale overwrite was made.')
+async function drainQueue(revisions) {
+  for (const [name, revision] of revisions) await dequeueIfUnchanged(name, revision)
 }
 
 // Record-level reconcile for one file, symmetric across push and pull: parses
@@ -223,19 +170,36 @@ async function readLocal(name) {
   if (!rec) return null
   return rec.deleted ? null : rec.content
 }
+async function readLocalRecord(name) {
+  const rec = await idbGet(META_STORE, `local:${name}`)
+  if (!rec) return null
+  return { content: rec.deleted ? null : rec.content, mtime: rec.mtime || 0 }
+}
+async function listLocalNames() {
+  const keys = await idbKeys(META_STORE)
+  return keys.filter(k => typeof k === 'string' && k.startsWith('local:')).map(k => k.slice(6))
+}
 async function writeLocal(name, content) {
   await idbSet(META_STORE, `local:${name}`, { content, mtime: Date.now() })
+  await notifyLocalChange(name)
+}
+// Replace local content only if it still equals `expected` (null = absent or
+// deleted), atomically, so a concurrent UI write can never be clobbered.
+async function replaceLocal(name, expected, content) {
+  const wrote = await idbReplaceIf(
+    META_STORE, `local:${name}`,
+    rec => (rec && !rec.deleted ? rec.content : null) === expected,
+    { content, mtime: Date.now() },
+  )
+  if (wrote) await notifyLocalChange(name)
+  return wrote
+}
+async function notifyLocalChange(name) {
   // Notify clients so they can refresh their in-memory state / re-read via adapter.
   // Use `includeUncontrolled: true` because the SW's scope is narrow
   // (`/folder-sync/`) and the app page may not be controlled by this SW.
   const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
   for (const c of clients) c.postMessage({ type: 'remote-update', name })
-}
-async function getRemoteMtime(providerId, name) {
-  return (await idbGet(META_STORE, `mtime:${providerId}:${name}`)) || null
-}
-async function setRemoteMtime(providerId, name, mtime) {
-  await idbSet(META_STORE, `mtime:${providerId}:${name}`, mtime)
 }
 
 async function broadcast(partial) {

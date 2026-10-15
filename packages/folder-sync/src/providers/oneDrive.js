@@ -142,7 +142,7 @@ async function ensureToken(providerConfig) {
 
 async function listRemote(providerConfig) {
   const token = await ensureToken(providerConfig)
-  const res = await fetch(`${APPROOT}/children?$select=name,lastModifiedDateTime,file`, {
+  const res = await fetch(`${APPROOT}/children?$select=name,lastModifiedDateTime,eTag,file`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (res.status === 404) return []
@@ -173,7 +173,7 @@ async function writeRemote(providerConfig, filename, contents) {
   })
   if (!res.ok) throw new Error(`OneDrive write failed: ${res.status}`)
   const data = await res.json()
-  return { mtime: new Date(data.lastModifiedDateTime).getTime() }
+  return { mtime: new Date(data.lastModifiedDateTime).getTime(), rev: data.eTag }
 }
 
 async function deleteRemote(providerConfig, filename) {

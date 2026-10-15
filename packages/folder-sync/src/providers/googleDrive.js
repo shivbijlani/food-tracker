@@ -35,6 +35,8 @@ export function googleDriveProvider({ clientId }) {
     readRemote,
     writeRemote,
     deleteRemote,
+    readVersioned,
+    writeVersioned,
     refresh: () => refresh(),
   }
 }
@@ -109,7 +111,7 @@ async function listRemote() {
   const url = new URL(`${DRIVE_BASE}/files`)
   url.searchParams.set('spaces', SPACES)
   url.searchParams.set('q', 'trashed=false')
-  url.searchParams.set('fields', 'nextPageToken,files(id,name,modifiedTime)')
+  url.searchParams.set('fields', 'nextPageToken,files(id,name,modifiedTime,version)')
   url.searchParams.set('pageSize', '1000')
   const files = []
   let pageToken = null
@@ -124,6 +126,7 @@ async function listRemote() {
   return files.map(f => ({
     name: f.name,
     mtime: new Date(f.modifiedTime).getTime(),
+    rev: f.version,
     _id: f.id,
   }))
 }
@@ -169,8 +172,8 @@ async function writeRemote(_providerConfig, filename, contents) {
     `\r\n--${boundary}--`
 
   const url = existingId
-    ? `${UPLOAD_BASE}/files/${existingId}?uploadType=multipart&fields=id,modifiedTime`
-    : `${UPLOAD_BASE}/files?uploadType=multipart&fields=id,modifiedTime`
+    ? `${UPLOAD_BASE}/files/${existingId}?uploadType=multipart&fields=id,modifiedTime,version`
+    : `${UPLOAD_BASE}/files?uploadType=multipart&fields=id,modifiedTime,version`
   const res = await driveFetch(url, {
     method: existingId ? 'PATCH' : 'POST',
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
@@ -178,7 +181,7 @@ async function writeRemote(_providerConfig, filename, contents) {
   })
   if (!res.ok) throw new Error(`Google write failed: ${res.status}`)
   const data = await res.json()
-  return { mtime: new Date(data.modifiedTime).getTime() }
+  return { mtime: new Date(data.modifiedTime).getTime(), rev: data.version, id: data.id }
 }
 
 async function deleteRemote(_providerConfig, filename) {
@@ -188,4 +191,46 @@ async function deleteRemote(_providerConfig, filename) {
   if (res.status !== 204 && res.status !== 404) {
     throw new Error(`Google delete failed: ${res.status}`)
   }
+}
+
+// ---- versioned (compare-and-swap) access for record-merged files ----
+// Drive v3 has no If-Match on uploads, so we compare the file's monotonically
+// increasing `version` immediately before writing. That narrows (but cannot
+// fully close) the window for a concurrent writer; the three-way merge base
+// makes any edit lost in that window show up as a remote change next sync.
+
+function preconditionFailed(message) {
+  const e = new Error(message)
+  e.code = 'PRECONDITION_FAILED'
+  return e
+}
+
+async function fileVersion(id) {
+  const res = await driveFetch(`${DRIVE_BASE}/files/${id}?fields=id,version`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Google metadata failed: ${res.status}`)
+  return (await res.json()).version ?? null
+}
+
+async function readVersioned(filename) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const id = await findFileId(filename)
+    if (!id) return { content: null, id: null, version: null }
+    const before = await fileVersion(id)
+    if (before == null) continue
+    const res = await driveFetch(`${DRIVE_BASE}/files/${id}?alt=media`)
+    if (res.status === 404) continue
+    if (!res.ok) throw new Error(`Google read failed: ${res.status}`)
+    const content = await res.text()
+    if ((await fileVersion(id)) !== before) continue
+    return { content, id, version: before }
+  }
+  throw preconditionFailed('Google Drive kept changing during read.')
+}
+
+async function writeVersioned(filename, content, snapshot) {
+  const id = await findFileId(filename)
+  if ((id || null) !== (snapshot.id || null)) throw preconditionFailed('Google Drive file changed during sync.')
+  if (id && (await fileVersion(id)) !== snapshot.version) throw preconditionFailed('Google Drive file changed during sync.')
+  return writeRemote(null, filename, content)
 }
