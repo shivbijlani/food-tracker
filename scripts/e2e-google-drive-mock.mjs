@@ -59,26 +59,31 @@ async function installGoogleMock(context, label) {
       const m = q.match(/name='((?:[^'\\]|\\.)*)'/)
       const files = [...drive.entries()]
         .filter(([name]) => !m || name === m[1].replace(/\\(.)/g, '$1'))
-        .map(([name, f]) => ({ id: f.id, name, modifiedTime: f.modifiedTime }))
+        .map(([name, f]) => ({ id: f.id, name, modifiedTime: f.modifiedTime, version: String(f.version) }))
       return json({ files })
     }
     if (idMatch && req.method() === 'GET' && u.searchParams.get('alt') === 'media') {
       const f = byId(idMatch[1])
       return f ? route.fulfill({ status: 200, contentType: 'text/plain', body: f.content }) : json({}, 404)
     }
+    if (idMatch && req.method() === 'GET') {
+      const f = byId(idMatch[1])
+      return f ? json({ id: f.id, version: String(f.version) }) : json({}, 404)
+    }
     if (u.pathname.startsWith('/upload/drive/v3/files')) {
       const { meta, content } = parseMultipart(req.postData())
       const modifiedTime = new Date().toISOString()
       if (req.method() === 'POST') {
         if (!meta.parents?.includes('appDataFolder')) return json({ error: 'not appDataFolder' }, 400)
-        const f = { id: `id${nextId++}`, content, modifiedTime }
+        const f = { id: `id${nextId++}`, content, modifiedTime, version: 1 }
         drive.set(meta.name, f)
-        return json({ id: f.id, modifiedTime })
+        return json({ id: f.id, modifiedTime, version: '1' })
       }
       const f = byId(idMatch[1])
       f.content = content
       f.modifiedTime = modifiedTime
-      return json({ id: f.id, modifiedTime })
+      f.version += 1
+      return json({ id: f.id, modifiedTime, version: String(f.version) })
     }
     if (idMatch && req.method() === 'DELETE') {
       for (const [name, f] of drive) if (f.id === idMatch[1]) drive.delete(name)
@@ -141,6 +146,7 @@ try {
   const entriesFile = `entries-${month}.md`
   await waitFor(() => drive.get(entriesFile)?.content.includes(MEAL), `${entriesFile} with meal in Drive`)
   log(`A pushed ${entriesFile} to Drive:`, [...drive.keys()].join(', '))
+  const staleSnapshot = drive.get(entriesFile).content
   await a.screenshot({ path: `${OUT}/e2e-2-logged.png` })
 
   // ---- Device B: fresh profile pulls it back ----
@@ -189,6 +195,30 @@ try {
   await openStorageSettings(a)
   await googleRow(a).scrollIntoViewIfNeeded()
   await a.screenshot({ path: `${OUT}/e2e-4-reconnected.png` })
+
+  // ---- Device C: has its own unsynced meal; Drive holds an older copy ----
+  // Restore Drive to the earlier snapshot (stale copy), then connect a device
+  // that logged a meal locally first. Both rows must survive on both sides.
+  const f = drive.get(entriesFile)
+  Object.assign(f, { content: staleSnapshot, modifiedTime: new Date(Date.now() - 86400_000).toISOString(), version: f.version + 1 })
+  const ctxC = await browser.newContext()
+  await installGoogleMock(ctxC, 'C')
+  const c = await ctxC.newPage()
+  c.on('pageerror', e => errors.push(`C: ${e.message}`))
+  await c.goto(BASE)
+  await c.getByPlaceholder(/2 eggs/).waitFor()
+  const MEAL3 = `${MEAL} (local before connecting)`
+  await c.getByPlaceholder(/2 eggs/).fill(MEAL3)
+  await c.getByRole('button', { name: /Quick add/ }).click()
+  await c.getByText(MEAL3).first().waitFor()
+  await connectGoogle(c)
+  await waitFor(() => drive.get(entriesFile)?.content.includes(MEAL3), 'local meal merged into stale Drive copy')
+  if (!drive.get(entriesFile).content.includes(`| ${MEAL} |`)) throw new Error('Drive lost its own meal during merge')
+  await waitFor(async () => {
+    const local = await c.evaluate(k => localStorage.getItem(k), `ft-file:${entriesFile}`)
+    return local?.includes(MEAL3) && local.includes(`| ${MEAL} |`)
+  }, 'device C has both its meal and the Drive meal')
+  log('C merged its local meal with a stale Drive copy; nothing lost on either side')
 
   if (errors.length) throw new Error(`page errors:\n${errors.join('\n')}`)
   log('PASS')

@@ -135,4 +135,56 @@ describe('googleDrive I/O', () => {
     expect(nameQuery("it's.md")).toBe("name='it\\'s.md' and trashed=false")
     expect(nameQuery('a\\b.md')).toBe("name='a\\\\b.md' and trashed=false")
   })
+
+  // Tiny Drive fake routed by URL, for the versioned (compare-and-swap) API.
+  function driveFake(file) {
+    fetch.mockImplementation(async (url, init = {}) => {
+      const u = String(url)
+      const ok = body => ({ ok: true, status: 200, json: async () => body, text: async () => body })
+      if (u.includes('/upload/')) {
+        file.content = init.body.split('\r\n\r\n').pop().replace(/\r\n--[^\r\n]+--$/, '')
+        file.version = String(Number(file.version) + 1)
+        return ok({ id: file.id, modifiedTime: '2026-01-03T00:00:00Z', version: file.version })
+      }
+      if (u.includes('alt=media')) {
+        const body = file.content
+        file.onDownload?.()
+        return ok(body)
+      }
+      if (u.includes('fields=id%2Cversion') || u.includes('fields=id,version')) return ok({ id: file.id, version: file.version })
+      return ok({ files: file.id ? [{ id: file.id }] : [] })
+    })
+  }
+
+  it('readVersioned returns content with the version it was read at', async () => {
+    tokens.set('google-drive', { accessToken: 'tok', expiresAt: Date.now() + 3600_000 })
+    driveFake({ id: 'f1', version: '7', content: 'rows' })
+    await expect(p().readVersioned('protein-2026-10.md')).resolves.toEqual({ content: 'rows', id: 'f1', version: '7' })
+  })
+
+  it('readVersioned retries when the file changes mid-download', async () => {
+    tokens.set('google-drive', { accessToken: 'tok', expiresAt: Date.now() + 3600_000 })
+    const file = { id: 'f1', version: '7', content: 'old' }
+    file.onDownload = () => { file.version = '8'; file.content = 'new'; file.onDownload = null }
+    driveFake(file)
+    await expect(p().readVersioned('protein-2026-10.md')).resolves.toEqual({ content: 'new', id: 'f1', version: '8' })
+  })
+
+  it('writeVersioned refuses to overwrite a newer version', async () => {
+    tokens.set('google-drive', { accessToken: 'tok', expiresAt: Date.now() + 3600_000 })
+    const file = { id: 'f1', version: '8', content: 'theirs' }
+    driveFake(file)
+    await expect(p().writeVersioned('protein-2026-10.md', 'mine', { id: 'f1', version: '7' }))
+      .rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    expect(file.content).toBe('theirs')
+    await p().writeVersioned('protein-2026-10.md', 'mine', { id: 'f1', version: '8' })
+    expect(file.content).toBe('mine')
+  })
+
+  it('writeVersioned refuses to create when another device created the file first', async () => {
+    tokens.set('google-drive', { accessToken: 'tok', expiresAt: Date.now() + 3600_000 })
+    driveFake({ id: 'f1', version: '1', content: 'theirs' })
+    await expect(p().writeVersioned('protein-2026-10.md', 'mine', { id: null, version: null }))
+      .rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+  })
 })

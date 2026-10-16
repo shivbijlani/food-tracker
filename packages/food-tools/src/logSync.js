@@ -18,6 +18,9 @@ export function mergeLogSnapshots(baseContent, localContent, remoteContent, mode
     const localChanged = key(left) !== key(before)
     const remoteChanged = key(right) !== key(before)
     if (localChanged && remoteChanged && key(left) !== key(right)) {
+      // No shared history (first sync with this copy): keep this device's row
+      // rather than an older copy's; a shared base means a real conflict.
+      if (baseContent == null) { rows.push(left); continue }
       throw new ToolError('SYNC_CONFLICT', 'The same food entry changed on both devices. Resolve the conflict before syncing.')
     }
     const winner = localChanged ? left : right

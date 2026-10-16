@@ -45,6 +45,23 @@ export async function idbSet(store, key, value) {
   })
 }
 
+// Atomic compare-and-set: writes `value` only if `matches(current)` holds,
+// all inside one readwrite transaction. Resolves to whether it wrote.
+export async function idbReplaceIf(store, key, matches, value) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite')
+    const os = tx.objectStore(store)
+    let wrote = false
+    const req = os.get(key)
+    req.onsuccess = () => {
+      if (matches(req.result)) { os.put(value, key); wrote = true }
+    }
+    tx.oncomplete = () => resolve(wrote)
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export async function idbDel(store, key) {
   const db = await openDB()
   return new Promise((resolve, reject) => {
