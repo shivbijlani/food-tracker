@@ -157,10 +157,13 @@ test('Graph store conditional create/write, forced 412, fresh metadata, no beare
   await tools.commit_food_log(args(prep))
   assert.equal((await tools.get_day({ date: '2026-10-12' })).entries.length, 2)
   const puts = mock.requests.filter(r => r.method === 'PUT')
-  assert.deepEqual(puts.map(p => p.headers['If-Match']), ['1', '2'])
+  // First attempt is a create-only upload that loses to a concurrent creator (409),
+  // then the re-read row-merges and writes conditionally on the new eTag.
+  assert.ok(puts[0].url.includes('@microsoft.graph.conflictBehavior=fail'))
+  assert.equal(puts[0].headers['If-Match'], undefined)
+  assert.deepEqual(puts.slice(1).map(p => p.headers['If-Match']), ['1'])
   assert.ok(puts[1].body.includes('Concurrent food'))
-  const reserve = mock.requests.find(r => r.method === 'POST')
-  assert.equal(JSON.parse(reserve.body)['@microsoft.graph.conflictBehavior'], 'fail')
+  assert.ok(!mock.requests.some(r => r.method === 'POST'))
 })
 
 test('explicit Graph errors do not echo tokens, bodies or account details', async () => {
