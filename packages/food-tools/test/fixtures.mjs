@@ -37,16 +37,12 @@ export function mockGraph({ forceConflict = false } = {}) {
     if (url.includes('/children') && !init.method) {
       return response({ value: [...files.keys()].map(name => ({ name, file: {}, lastModifiedDateTime: new Date().toISOString() })) })
     }
-    if (init.method === 'POST') {
-      const { name } = JSON.parse(init.body)
-      if (files.has(name)) return response({}, 409)
-      files.set(name, '')
-      versions.set(name, 1)
-      return response({ id: name, eTag: '1' }, 201)
-    }
+    // Real Graph rejects creating a file via POST /children with `file: {}`.
+    if (init.method === 'POST') return response({ error: { code: 'invalidRequest' } }, 400)
     if (init.method === 'PUT') {
       const name = url.includes('/items/') ? decodeURIComponent(url.split('/').at(-2)) :
         decodeURIComponent(url.split('approot:/')[1].split(':/content')[0])
+      const createOnly = url.includes('conflictBehavior=fail')
       if (forceConflict) {
         forceConflict = false
         const simple = name.startsWith('protein-')
@@ -54,9 +50,11 @@ export function mockGraph({ forceConflict = false } = {}) {
           [{ ...CONCURRENT, Meal: simple ? 'Concurrent food' : CONCURRENT.Meal }],
           { kind: 'entries', mode: simple ? 'simple' : 'advanced' }))
         versions.set(name, (versions.get(name) || 0) + 1)
-        return response({}, 412)
+        return response({}, createOnly ? 409 : 412)
       }
-      if (init.headers['If-None-Match'] === '*') {
+      if (createOnly) {
+        if (files.has(name)) return response({}, 409)
+      } else if (init.headers['If-None-Match'] === '*') {
         if (files.has(name)) return response({}, 412)
       } else if (init.headers['If-Match'] !== String(versions.get(name))) return response({}, 412)
       files.set(name, init.body)

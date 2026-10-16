@@ -52,19 +52,17 @@ export function oneDriveStore({ getAccessToken, fetchImpl = fetch }) {
     },
     async write(name, content, snapshot) {
       path(name)
-      let { id, etag } = snapshot
+      const { id, etag } = snapshot
       if (!id) {
-        // Graph simple uploads do not offer a documented create-only content
-        // precondition. Reserve the filename with conflictBehavior=fail first.
-        const created = await request(`${ROOT}/children`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, file: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+        // Create-only upload: Graph answers 409 if another writer created the
+        // file first, which surfaces as PRECONDITION_FAILED so callers re-read.
+        // (POST /children with `file: {}` is rejected by Graph with HTTP 400.)
+        await request(`${path(name)}:/content?@microsoft.graph.conflictBehavior=fail`, {
+          method: 'PUT', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: content,
         })
-        const item = await created.json()
-        id = item.id
-        etag = item.eTag
+        return
       }
-      if (!id || !etag) throw new ToolError('INVALID_RESPONSE', 'Missing OneDrive write precondition.')
+      if (!etag) throw new ToolError('INVALID_RESPONSE', 'Missing OneDrive write precondition.')
       await request(`${GRAPH}/me/drive/items/${encodeURIComponent(id)}/content`, {
         method: 'PUT', headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-Match': etag }, body: content,
       })

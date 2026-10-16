@@ -204,8 +204,8 @@ Receipts survive UI edits/deletion; retries do not resurrect deleted food.
 
 Writes use a fresh item ID/eTag and `If-Match`. On 412 the operation re-reads and
 reapplies against current entries, preserving concurrent additions. A missing
-monthly file is reserved with Graph `conflictBehavior: fail`, then conditionally
-filled; an interruption can leave an empty monthly file, not lost existing data.
+monthly file is created with a create-only upload (Graph `conflictBehavior=fail`);
+if another writer created it first, the 409 triggers the same re-read and merge.
 Repeated contention fails explicitly; retry with the same operation ID.
 Catalog revisions are checked before resolving choices and immediately before
 the log write. `STALE_PREPARATION` requires another lookup and reviewed choices.
