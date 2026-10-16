@@ -49,6 +49,34 @@ const revKey = (pid, name) => `rev:${pid}:${name}`
 // Opaque per-version marker (OneDrive eTag, Drive version); mtime as fallback.
 const revOf = item => item?.rev ?? item?.mtime ?? null
 
+// First field of a CSV line (handles a quoted field with "" escapes).
+function csvKey(line) {
+  if (!line.startsWith('"')) return line.split(',')[0].trim().toLowerCase()
+  let out = ''
+  for (let i = 1; i < line.length; i++) {
+    if (line[i] === '"') {
+      if (line[i + 1] === '"') { out += '"'; i++ } else break
+    } else out += line[i]
+  }
+  return out.trim().toLowerCase()
+}
+
+/** Union of two CSV files keyed by first column; `local` rows win on a clash. */
+export function unionCsvRows(local, remote) {
+  const split = s => s.split(/\r?\n/)
+  const [header, ...localRows] = split(local)
+  const rows = localRows.filter(l => l.trim())
+  const seen = new Set(rows.map(csvKey))
+  for (const line of split(remote).slice(1)) {
+    if (!line.trim() || seen.has(csvKey(line))) continue
+    seen.add(csvKey(line))
+    rows.push(line)
+  }
+  return [header, ...rows].join('\n') + '\n'
+}
+
+const UNION_ON_FIRST_SYNC = { 'suggestions.csv': unionCsvRows }
+
 /**
  * Sync every known file with one provider.
  *
@@ -95,16 +123,23 @@ async function syncWholeFile(provider, name, item, io) {
   if (remoteUnchanged && local === base) return
   const remote = !item ? null : remoteUnchanged ? base : await provider.readRemote(provider, name)
 
-  const merged = resolveWholeFile({
-    base, local, remote,
-    localMtime: localRec?.mtime || 0,
-    remoteMtime: item?.mtime || 0,
-    localDeleted: !!localRec && localRec.content == null,
-  })
+  const merged = base === undefined && UNION_ON_FIRST_SYNC[name] && local != null && remote != null
+    // Never synced with this provider and both sides differ: keep every row
+    // from both copies instead of discarding one whole file by timestamp.
+    ? UNION_ON_FIRST_SYNC[name](local, remote)
+    : resolveWholeFile({
+      base, local, remote,
+      localMtime: localRec?.mtime || 0,
+      remoteMtime: item?.mtime || 0,
+      localDeleted: !!localRec && localRec.content == null,
+    })
 
   // Commit locally first, atomically against the content we merged from. If
   // the user edited meanwhile, push nothing: the next sync merges that edit.
-  if (merged !== local && merged != null && !(await io.replaceLocal(name, local, merged))) return
+  // Pulled content keeps the remote's mtime: stamping it "now" would make a
+  // stale copy look newer than every other provider's copy.
+  const pulledMtime = merged === remote && item?.mtime ? item.mtime : undefined
+  if (merged !== local && merged != null && !(await io.replaceLocal(name, local, merged, pulledMtime))) return
 
   if (merged !== remote) {
     if (merged == null) {
