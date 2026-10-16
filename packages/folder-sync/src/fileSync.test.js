@@ -48,9 +48,9 @@ function fakeLocal(files = {}) {
   const io = {
     local, meta,
     readLocal: async name => local.has(name) ? local.get(name) : null,
-    replaceLocal: async (name, expected, content) => {
+    replaceLocal: async (name, expected, content, mtime = Date.now()) => {
       if ((local.get(name)?.content ?? null) !== expected) return false
-      local.set(name, { content, mtime: Date.now() })
+      local.set(name, { content, mtime })
       return true
     },
     listLocal: async () => [...local.keys()],
@@ -80,6 +80,36 @@ describe('resolveWholeFile', () => {
 })
 
 describe('syncProviderFiles with a stale second provider', () => {
+  // Production repro: the local mirror was older than both clouds; Google
+  // synced first and its stale copy was stamped "now", then beat OneDrive.
+  it('a stale copy pulled from one provider never looks newer than another provider', async () => {
+    const io = fakeLocal({ 'goals.md': { content: 'mirror junk', mtime: 10 } })
+    const google = fakeProvider('google-drive', { 'goals.md': { content: 'stale google', mtime: 100 } })
+    const onedrive = fakeProvider('onedrive', { 'goals.md': { content: 'current onedrive', mtime: 200 } })
+
+    await syncProviderFiles(google, io)
+    await syncProviderFiles(onedrive, io)
+    await syncProviderFiles(google, io)
+    await syncProviderFiles(onedrive, io)
+
+    expect(onedrive.store.get('goals.md').content).toBe('current onedrive')
+    expect(google.store.get('goals.md').content).toBe('current onedrive')
+    expect(io.local.get('goals.md').content).toBe('current onedrive')
+  })
+
+  it('first sync of the food catalog keeps rows from both copies', async () => {
+    const header = 'name,protein_g,calories,calcium_mg,veg_servings,omega3'
+    const io = fakeLocal({ 'suggestions.csv': { content: `${header}\nTest oatmeal,,,,,N\n`, mtime: 9999 } })
+    const onedrive = fakeProvider('onedrive', {
+      'suggestions.csv': { content: `${header}\n2 eggs,14,140,56,0,N\n"Tuna, canned",20,,,,Y\n`, mtime: 1 },
+    })
+
+    await syncProviderFiles(onedrive, io)
+
+    const rows = onedrive.store.get('suggestions.csv').content.trim().split('\n')
+    expect(rows).toEqual([header, 'Test oatmeal,,,,,N', '2 eggs,14,140,56,0,N', '"Tuna, canned",20,,,,Y'])
+    expect(io.local.get('suggestions.csv').content).toBe(onedrive.store.get('suggestions.csv').content)
+  })
   it('first connect to a stale Google copy keeps newer local data and pushes it', async () => {
     const fresh = log([row('a', 'Beef bake', '12'), row('b', 'Eggs', '14'), row('c', 'Milk', '14')])
     const stale = log([row('a', 'Beef bake', ''), row('b', 'Eggs', '14'), row('g', 'Only on Google', '5')])

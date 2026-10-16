@@ -185,11 +185,11 @@ async function writeLocal(name, content) {
 }
 // Replace local content only if it still equals `expected` (null = absent or
 // deleted), atomically, so a concurrent UI write can never be clobbered.
-async function replaceLocal(name, expected, content) {
+async function replaceLocal(name, expected, content, mtime = Date.now()) {
   const wrote = await idbReplaceIf(
     META_STORE, `local:${name}`,
     rec => (rec && !rec.deleted ? rec.content : null) === expected,
-    { content, mtime: Date.now() },
+    { content, mtime },
   )
   if (wrote) await notifyLocalChange(name)
   return wrote
