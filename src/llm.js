@@ -291,7 +291,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
 // --- Coaching ---------------------------------------------------------------
 
-const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preamble, no rules, no quoting these instructions.`
+const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preamble, no rules, no quoting or restating these instructions. Do not show your reasoning, list the steps, or do arithmetic out loud. Output only the final 2–3 sentences of coaching, written directly to the user as "you".`
 
 // Kept separate from the system prompt so it can be included in the user
 // message instead. Small/free models often echo system prompts verbatim,
@@ -384,14 +384,23 @@ export async function getCoaching(ctx = {}) {
 
   const model = getModel(provider)
 
-  try {
+  // Resolve OpenRouter fallback models once, outside the retry loop.
+  let openrouterModels = [model]
+  if (provider === 'openrouter' && model.endsWith(':free')) {
+    try {
+      const freeModels = await fetchFreeModels()
+      openrouterModels = [model, ...freeModels.filter(m => m !== model)].slice(0, 3)
+    } catch {
+      openrouterModels = [model]
+    }
+  }
+
+  // One request to the configured provider. Returns the cleaned coaching text,
+  // or null on a non-OK response / empty content. Leak detection happens in the
+  // caller so we can retry a leaking generation before giving up.
+  async function requestOnce() {
     let res
     if (provider === 'openrouter') {
-      let fallbacks = [model]
-      if (model.endsWith(':free')) {
-        const freeModels = await fetchFreeModels()
-        fallbacks = [model, ...freeModels.filter(m => m !== model)].slice(0, 3)
-      }
       res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -401,7 +410,7 @@ export async function getCoaching(ctx = {}) {
           'X-Title': 'Mealjot Food Tracker',
         },
         body: JSON.stringify({
-          models: fallbacks,
+          models: openrouterModels,
           messages: [
             { role: 'system', content: COACH_SYSTEM_PROMPT },
             { role: 'user', content: userContent },
@@ -475,19 +484,27 @@ export async function getCoaching(ctx = {}) {
     if (!content) return null
 
     // Strip any markdown formatting the model may have ignored instructions on.
-    let cleaned = String(content)
+    return String(content)
       .trim()
       .replace(/^[#>*\-•\s]+/, '')
       .replace(/\*\*/g, '')
       .replace(/^["']|["']$/g, '')
       .trim()
+  }
 
-    // Leak filter: small/free models sometimes echo the system prompt or our
-    // guidance text. If the response contains a non-trivial substring from
-    // either, drop it rather than show garbled output to the user.
-    if (looksLikePromptLeak(cleaned)) return null
-
-    return cleaned || null
+  try {
+    // Small/free models sometimes echo the system prompt/guidance or spill
+    // their reasoning instead of answering. When that happens, retry once
+    // before falling back to showing nothing — a single bad generation
+    // shouldn't blank the coaching when a clean one is usually a retry away.
+    const MAX_ATTEMPTS = 2
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const cleaned = await requestOnce()
+      if (cleaned == null) return null
+      if (looksLikePromptLeak(cleaned)) continue
+      return cleaned || null
+    }
+    return null
   } catch {
     // Abort or network/parse failure — silent.
     return null
@@ -496,24 +513,82 @@ export async function getCoaching(ctx = {}) {
 
 function looksLikePromptLeak(text) {
   if (!text) return false
-  const lower = text.toLowerCase()
-  // Clear giveaways from either prompt.
+  // Normalize so en/em dashes and odd spacing don't let paraphrased
+  // instructions slip past (e.g. "1–2 foods" vs "1-2 foods", "max  60 words").
+  const lower = String(text)
+    .toLowerCase()
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  // Phrases that almost never appear in genuine, user-facing coaching but are
+  // tell-tale signs the model echoed our guidance or spilled its reasoning.
+  // Drawn from COACH_SYSTEM_PROMPT, COACH_GUIDANCE, and the meta/scratchpad
+  // language models emit when they restate the task instead of answering it.
   const tells = [
+    // system-prompt / guidance echoes
     'you are a friendly',
     'coaching message only',
     'nutrition coach',
-    'never invent data',
+    'performance nutritionist',
+    'never invent',
     'plain text only',
+    'plain text sentences',
+    'plain-text sentences',
+    'no markdown',
+    'no bullet points',
     'rules:',
     'max 50 words',
+    'max 60 words',
     'maximum 60 words',
+    '60 words max',
     'personal systems:',
     'recent log',
+    'recent history',
+    // guidance step language
+    'assess progress',
+    'remaining gap',
+    'most important gap',
+    'name 1-2 foods',
+    'name 1 to 2 foods',
+    'from their history',
+    'foods from their',
+    'close the gap',
+    'no praise',
+    'skip praise',
+    'their daily',
+    'their goal',
+    // reasoning / scratchpad leaks
+    'we need to respond',
+    'we should respond',
+    'i need to respond',
+    'respond with 2',
+    'let me ',
+    "let's ",
+    'step 1',
+    'step 2',
+    'first,',
   ]
+
   let hits = 0
   for (const t of tells) if (lower.includes(t)) hits++
-  // 2+ tells is almost certainly a leak; a single very specific one also counts.
+
+  // Any one of these on its own is a near-certain leak.
+  const strongTells = [
+    'you are a friendly nutrition coach',
+    'coaching message only',
+    'performance nutritionist',
+    'assess progress',
+    'remaining gap',
+    'name 1-2 foods',
+    'we need to respond',
+    'plain-text sentences',
+    'plain text sentences',
+  ]
+  if (strongTells.some(t => lower.includes(t))) return true
+
+  // Otherwise, 2+ weaker tells together is almost certainly a leak.
   return hits >= 2
-    || lower.includes('you are a friendly nutrition coach')
-    || lower.includes('coaching message only')
 }
+
+export const __testing = { looksLikePromptLeak }
