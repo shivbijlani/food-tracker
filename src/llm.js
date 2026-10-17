@@ -293,6 +293,56 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
 const COACH_SYSTEM_PROMPT = `Reply with the coaching message only — no preamble, no rules, no quoting these instructions.`
 
+// --- Late-day "untracked, not uneaten" guard (issue #54) ---------------------
+//
+// At 11 PM with an empty log, the overwhelmingly likely explanation is that the
+// user did not TRACK, not that they did not EAT. The coaching prompt has no way
+// to tell those apart: it sees `protein: 0` against a 120g goal and dutifully
+// prescribes a shake, a chicken breast and a yogurt before bed.
+//
+// This is deliberately a HARD RULE IN CODE rather than extra prompt guidance.
+// A prompt can be talked out of its instructions — that is exactly the failure
+// class behind issue #339, where the model echoed our own rules back at the
+// user. A branch cannot. When the rule fires we skip the model entirely, so the
+// wrong message is not merely discouraged, it is unreachable.
+
+/**
+ * Hour of the day (0–23, local) from which an empty log is read as "untracked"
+ * rather than "nothing eaten". 21 == 9 PM, matching the `evening` /
+ * `late evening` boundary that `useCoaching` already uses to bucket the time.
+ */
+export const LATE_DAY_HOUR = 21
+
+/**
+ * The card shown late in the day when nothing has been logged.
+ *
+ * This is the one line of user-facing copy in the guard — kept as a single
+ * named constant so the wording is a one-line change, not a code change.
+ */
+export const UNTRACKED_LATE_DAY_MESSAGE =
+  "Nothing logged today — if you ate, add it now so tomorrow's numbers mean something."
+
+/**
+ * True when it is late in the day and nothing has been logged for it.
+ *
+ * Pure and exported so the decision is testable on its own, without stubbing a
+ * network call.
+ *
+ * @param {{ currentHour?: number|null, todayEntryCount?: number,
+ *           justLoggedMeal?: boolean }} ctx
+ *   `currentHour` is null/undefined whenever the caller is coaching a day other
+ *   than today — reviewing a past date has no meaningful "now", so the guard
+ *   must not fire. `justLoggedMeal` covers the moment right after a save, when
+ *   the entry may not have propagated into `todayEntryCount` yet.
+ * @returns {boolean}
+ */
+export function isLateDayUntracked({ currentHour, todayEntryCount = 0, justLoggedMeal = false } = {}) {
+  if (justLoggedMeal) return false
+  if (!Number.isFinite(currentHour)) return false
+  if (currentHour < LATE_DAY_HOUR) return false
+  return Number(todayEntryCount) === 0
+}
+
 // Kept separate from the system prompt so it can be included in the user
 // message instead. Small/free models often echo system prompts verbatim,
 // so we put behavioural guidance in the user turn and keep the system
@@ -371,6 +421,7 @@ export function buildCoachingUserContent(ctx = {}) {
  *           lastMeal?: string, lastProteinLogged?: number|string,
  *           todayEntriesText?: string, todayTotals?: object,
  *           goalsText?: string, frequentFoodsText?: string, currentTime?: string,
+ *           currentHour?: number|null, todayEntryCount?: number,
  *           signal?: AbortSignal }} ctx
  * @returns {Promise<string|null>}
  */
@@ -378,6 +429,19 @@ export async function getCoaching(ctx = {}) {
   const provider = getProvider()
   const apiKey = getApiKey(provider)
   if (!apiKey) return null
+
+  // Late in the day with an empty log: say "log it", not "eat 120g of protein"
+  // (issue #54). Checked before the request is built, so the model is never
+  // given the chance to produce the wrong message. Deliberately placed AFTER
+  // the API-key check above, so an app with no LLM configured still shows no
+  // card at all rather than suddenly gaining one.
+  if (isLateDayUntracked({
+    currentHour: ctx.currentHour,
+    todayEntryCount: ctx.todayEntryCount,
+    justLoggedMeal: Boolean(ctx.lastMealLine),
+  })) {
+    return UNTRACKED_LATE_DAY_MESSAGE
+  }
 
   const { signal } = ctx
   const userContent = buildCoachingUserContent(ctx)
