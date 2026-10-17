@@ -1,6 +1,7 @@
 // LLM client for nutrition estimation — supports OpenRouter (OAuth), GitHub Models, OpenAI, and Claude.
 
 import * as openrouterAuth from './openrouter-auth.js'
+import * as debugLog from './llmDebugLog.js'
 
 const PROVIDER_STORAGE = 'mealjot-llm-provider'
 const KEY_STORAGE = 'mealjot-openai-key'
@@ -130,8 +131,45 @@ Required JSON schema:
 
 Be conservative. Round calories/calcium to nearest 10, protein to nearest 1, veg_servings to 0.5. Use values from typical USDA food data. If the input is empty or non-food, return all zeros with confidence "low".`
 
-export async function estimateNutrition(foodDescription, { recipes = [], signal } = {}) {
+/**
+ * Estimate nutrition for a free-text food description.
+ *
+ * Thin wrapper around the implementation so every exit path — success, API
+ * error, or unparseable response — lands one record in the diagnostic buffer
+ * when the user has that setting enabled (task #273). Behaviour is otherwise
+ * identical: the same value is returned and the same errors are rethrown.
+ */
+export async function estimateNutrition(foodDescription, opts = {}) {
+  const diag = { feature: 'estimate', startedAt: Date.now() }
+  try {
+    const result = await runEstimateNutrition(foodDescription, opts, diag)
+    recordDiag(diag, { outcome: 'ok', parsed: result })
+    return result
+  } catch (err) {
+    recordDiag(diag, { outcome: 'error', error: err?.message || String(err) })
+    throw err
+  }
+}
+
+/** Collapse an accumulated `diag` bag into one ring-buffer record. */
+function recordDiag(diag, extra = {}) {
+  debugLog.record({
+    feature: diag.feature,
+    provider: diag.provider,
+    model: diag.model,
+    systemPrompt: diag.systemPrompt,
+    userPrompt: diag.userPrompt,
+    responseText: diag.responseText,
+    status: diag.status ?? null,
+    latencyMs: diag.startedAt ? Date.now() - diag.startedAt : null,
+    ...extra,
+  })
+}
+
+async function runEstimateNutrition(foodDescription, { recipes = [], signal } = {}, diag = {}) {
   const provider = getProvider()
+  diag.provider = provider
+  diag.userPrompt = foodDescription
   const apiKey = getApiKey(provider)
   if (!apiKey) {
     const err = provider === 'openrouter'
@@ -156,6 +194,8 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
 
   const model = getModel(provider)
   const systemContent = SYSTEM_PROMPT + recipeContext
+  diag.model = model
+  diag.systemPrompt = systemContent
 
   let res
   if (provider === 'openrouter') {
@@ -248,8 +288,10 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
     })
   }
 
+  diag.status = res.status
   if (!res.ok) {
     const err = await res.text()
+    diag.responseText = err
     throw new Error(`${PROVIDERS[provider].label} API error (${res.status}): ${err}`)
   }
 
@@ -262,6 +304,7 @@ export async function estimateNutrition(foodDescription, { recipes = [], signal 
     // openrouter, openai, github all use chat completions response shape
     content = data.choices?.[0]?.message?.content
   }
+  diag.responseText = content
   if (!content) throw new Error('No response from model')
 
   let parsed
@@ -379,10 +422,14 @@ export async function getCoaching(ctx = {}) {
   const apiKey = getApiKey(provider)
   if (!apiKey) return null
 
+  const diag = { feature: 'coach', startedAt: Date.now(), provider }
   const { signal } = ctx
   const userContent = buildCoachingUserContent(ctx)
 
   const model = getModel(provider)
+  diag.model = model
+  diag.systemPrompt = COACH_SYSTEM_PROMPT
+  diag.userPrompt = userContent
 
   try {
     let res
@@ -467,12 +514,21 @@ export async function getCoaching(ctx = {}) {
       })
     }
 
-    if (!res.ok) return null
+    diag.status = res.status
+    if (!res.ok) {
+      diag.responseText = await res.text().catch(() => '')
+      recordDiag(diag, { outcome: 'http-error', error: `HTTP ${res.status}` })
+      return null
+    }
     const data = await res.json()
     const content = provider === 'claude'
       ? data.content?.[0]?.text
       : data.choices?.[0]?.message?.content
-    if (!content) return null
+    diag.responseText = content
+    if (!content) {
+      recordDiag(diag, { outcome: 'empty-response' })
+      return null
+    }
 
     // Strip any markdown formatting the model may have ignored instructions on.
     let cleaned = String(content)
@@ -485,11 +541,19 @@ export async function getCoaching(ctx = {}) {
     // Leak filter: small/free models sometimes echo the system prompt or our
     // guidance text. If the response contains a non-trivial substring from
     // either, drop it rather than show garbled output to the user.
-    if (looksLikePromptLeak(cleaned)) return null
+    if (looksLikePromptLeak(cleaned)) {
+      // Worth its own outcome: this is the exact failure Shiv reported (the
+      // coach restating our instructions), and it is invisible in the UI
+      // because we return null. The buffer is the only place it surfaces.
+      recordDiag(diag, { outcome: 'leak-filtered', parsed: cleaned })
+      return null
+    }
 
+    recordDiag(diag, { outcome: cleaned ? 'ok' : 'empty-response', parsed: cleaned })
     return cleaned || null
-  } catch {
-    // Abort or network/parse failure — silent.
+  } catch (err) {
+    // Abort or network/parse failure — silent to the user, but recorded.
+    recordDiag(diag, { outcome: 'error', error: err?.message || String(err) })
     return null
   }
 }
